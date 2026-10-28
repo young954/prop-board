@@ -2215,18 +2215,20 @@ function evaluate(lg, id, g, row){
   const count = M.count.has(key), over = (v, l) => v > l;
   const mu0 = mean(vals), l5 = vals.slice(-5), n5 = l5.length;
   if (line < ((M.minLine || {})[key] || 0) || mu0 < .4 * line || mu0 > 2.2 * line) return {skip:1};
-  const mu0r = (n * mu0 + K_PRIOR * line) / (n + K_PRIOR);
   const sd0 = count ? 0 : (n * sdev(vals) + 4 * M.sd(key, mu0)) / (n + 4);
   const P = mu => pOver(mu, sd0 * Math.max(.5, mu / Math.max(mu0r, .05)), line, count);
   const io = imp(ov), iu = imp(un);
   const pm = iu != null ? io / (io + iu) : Math.min(.97, io * .955);
   if (pm < .2 || pm > .8) return {skip:1};
+  let lo = .05, hi = 4 * line + 10;                 // the average the market price implies
+  for (let i = 0; i < 40; i++){ const mid = (lo + hi) / 2; if (pOver(mid, sd0, line, count) < pm) lo = mid; else hi = mid; }
+  const muM = (lo + hi) / 2, mu0r = (n * mu0 + K_PRIOR * muM) / (n + K_PRIOR);
   const steps = []; let mu = mu0r, p = P(mu);
   const push = (label, detail, pNew, muNew) => { steps.push({label, detail, d: pNew - p}); p = pNew; if (muNew != null) mu = muNew; };
   const baseP = p;
   const o5 = l5.filter(v => over(v, line)).length, oS = vals.filter(v => over(v, line)).length;
   /* 1. recent form */
-  if (n5 >= 3){ const m5 = mean(l5), m5r = (n5 * m5 + K_PRIOR * line) / (n5 + K_PRIOR), mu1 = (1 - W_FORM) * mu0r + W_FORM * m5r;
+  if (n5 >= 3){ const m5 = mean(l5), m5r = (n5 * m5 + K_PRIOR * muM) / (n5 + K_PRIOR), mu1 = (1 - W_FORM) * mu0r + W_FORM * m5r;
     push("Recent form", `Last ${n5} avg ${f1(m5)} (${o5}/${n5} over ${line}) vs season ${f1(mu0)}`, P(mu1), mu1); }
   /* 2. matchup */
   let mdet = [], mu2 = mu;
