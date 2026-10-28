@@ -638,7 +638,8 @@ function renderSlate(){
   const ds = slateDays();
   if (!sDay){ $("games").innerHTML = `<p class="muted">No games on the schedule yet.</p>`; $("dl").textContent = "—"; $("dp").disabled = $("dn").disabled = true; return; }
   const i = ds.indexOf(sDay), today = etDate(new Date().toISOString());
-  const gpS = $("gp-nba"); if (gpS) gpS.dataset.today = sDay === today ? "1" : "0";
+  const gpS = $("gp-nba"); if (gpS) gpS.dataset.today = sDay <= today ? "1" : "0";
+  window.PB = window.PB || {}; if (PB.nbaDay !== sDay){ PB.nbaDay = sDay; if (window.pbDay) window.pbDay("nba"); }
   $("dp").disabled = i <= 0; $("dn").disabled = i >= ds.length-1;
   const lbl = new Date(sDay+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
   $("dl").textContent = sDay === today ? "Tonight · " + lbl.split(", ").slice(1).join(", ") : lbl;
@@ -1335,6 +1336,10 @@ build();
 @media (max-width:640px){.lv-list{grid-template-columns:1fr}}
 /* merged Games & props: live cards replace the slate cards when live data is loaded for the day shown */
 .gp-sec .slate-h{justify-content:flex-start;gap:8px 16px}
+.wk-nav{display:flex;align-items:center;gap:10px;margin:4px 0}
+.wk-nav button{font:700 18px var(--display);min-width:38px;min-height:38px;border:1px solid var(--line,#c9c9c9);border-radius:10px;background:var(--card,transparent);color:inherit;cursor:pointer}
+.wk-nav button:disabled{opacity:.35;cursor:default}
+.wk-nav .wk-l{font:800 17px var(--display);text-transform:uppercase;letter-spacing:.04em}
 .gp-sec[data-today="1"][data-live="1"] .gp-slate{display:none}
 .gp-sec:not([data-today="1"]) .gp-live{display:none}
 .gp-sec[data-today="1"]:not([data-live="1"]) .gp-live .lv-list{display:none}
@@ -1516,11 +1521,22 @@ let resCache = {}; try { resCache = JSON.parse(localStorage.getItem("pb-res") ||
 const saveRes = () => { try { localStorage.setItem("pb-res", JSON.stringify(resCache)); } catch {} };
 const isNflId = id => /^w\d+-/.test(id);
 const etDay = iso => new Date(iso).toLocaleDateString("en-CA",{timeZone:"America/New_York"});
+const nbaDay = () => (window.PB && PB.nbaDay) || etDay(new Date().toISOString());
+const ARCH = {}, archTried = {};
+async function loadArch(lg){
+  const names = lg === "nfl" ? ["archive/props-nfl-2026.json"] : [`archive/props-${nbaDay().slice(0,7)}.json`];
+  for (const n of names){
+    if (archTried[n]) continue; archTried[n] = 1;
+    try { const r = await fetch(n, {cache:"no-store"}); if (r.ok) Object.assign(ARCH, await r.json()); } catch {}
+  }
+}
+const propDoc = id => propsDb[id] || ARCH[id] || null;
+const nflWk = () => String(S.nfl.week || 0).padStart(2, "0");
 function todayDocs(lg){
-  const today = etDay(new Date().toISOString());
-  return S[lg].games.filter(g => etDay(g.start) === today).map(g => {
-    const doc = Object.entries(propsDb).find(([id, d]) => (lg === "nfl") === isNflId(id) && id.endsWith(`-${g.away.ab}-${g.home.ab}`) && (lg === "nfl" || id.startsWith(today)));
-    return doc && (doc[1].rows||[]).length ? {g, id:doc[0], doc:doc[1]} : null;
+  const day = nbaDay();
+  return S[lg].games.map(g => {
+    const id = lg === "nfl" ? `w${nflWk()}-${g.away.ab}-${g.home.ab}` : `${day}-${g.away.ab}-${g.home.ab}`, doc = propDoc(id);
+    return doc && (doc.rows||[]).length ? {g, id, doc} : null;
   }).filter(Boolean);
 }
 async function gradeDoc(lg, x){
@@ -1532,17 +1548,20 @@ async function gradeDoc(lg, x){
   const box = parseBox(lg, raw), hot = lg === "nba" ? hotStreaks(raw) : hotStreaksNfl(raw);
   const rows = (doc.rows||[]).map(([team, name, k, line, over, under, src, oLine]) => ({team, name, key:k, line, src, oLine, v:liveVal(lg, box, team, name, k), hot:hot[norm(name)] || null})).filter(r => r.v != null);
   const out = {id, gid:g.id, A:g.away.ab, H:g.home.ab, g:gg, rows, done:g.done};
-  if (g.done){ const keep = Object.fromEntries(Object.entries(resCache).filter(([k]) => k.startsWith(etDay(new Date().toISOString())) || /^w\d+-/.test(k))); resCache = keep; resCache[key] = out; saveRes(); }
+  if (g.done){ delete resCache[key]; resCache[key] = out; const ks = Object.keys(resCache); if (ks.length > 120) for (const k of ks.slice(0, ks.length - 120)) delete resCache[k]; saveRes(); }
   return out;
 }
 async function loadResults(lg, force){
   const R = RES[lg]; if (!ready || R.busy) return;
   if (!force && R.at && Date.now() - R.at < 300000) return;
-  const xs = todayDocs(lg);
   R.busy = true; render(lg);
+  await loadArch(lg);
+  const tag = lg === "nba" ? nbaDay() : String(S.nfl.week), xs = todayDocs(lg);
   const items = [];
   for (const x of xs){ try { items.push(await gradeDoc(lg, x)); } catch (e){ items.push({id:x.id, gid:x.g.id, err: errText(e).t}); } }
-  R.items = items; R.busy = false; R.tried = true; R.at = Date.now(); render(lg);
+  R.busy = false;
+  if (tag !== (lg === "nba" ? nbaDay() : String(S.nfl.week))) return loadResults(lg, true);
+  R.items = items; R.tried = true; R.at = Date.now(); render(lg);
 }
 /* ---------- Hot-streak detector (rainbow props) ----------
    Reads ESPN play-by-play and flags a player when any of these happen:
@@ -1863,9 +1882,11 @@ function render(lg){
       <label><input type="checkbox" id="lv-auto-${lg}" ${auto?"checked":""}> Auto-refresh while games are live</label>
       <button type="button" id="lv-ref-${lg}">Refresh</button></div>
     ${e?`<div class="lv-msg">${esc(e.t)}${e.allow?` <button class="lv-allow" type="button" id="lv-allow-${lg}">Allow live data</button>`:""}</div>`:""}
-    <div class="lv-list">${s.games.length ? s.games.map(g => gameUnit(lg, g, items[g.id], !!docs[g.id])).join("") : (s.at ? `<p class="muted">No games on today's ESPN scoreboard.</p>` : "")}</div>
+    ${lg === "nfl" ? `<div class="wk-nav"><button type="button" id="wk-prev" aria-label="Previous week" ${s.week <= 1 ? "disabled" : ""}>‹</button><span class="wk-l">Week ${s.week || "—"}${s.week && s.curWeek === s.week ? " · this week" : ""}</span><button type="button" id="wk-next" aria-label="Next week" ${s.week >= 18 ? "disabled" : ""}>›</button></div>` : ""}
+    <div class="lv-list">${s.games.length ? s.games.map(g => gameUnit(lg, g, items[g.id], !!docs[g.id])).join("") : (s.at ? `<p class="muted">${lg === "nba" ? "No games on the ESPN scoreboard for this day." : "No games on the ESPN scoreboard for this week."}</p>` : "")}</div>
     ${s.news.length ? `<h3 style="margin:4px 0 0;font-family:var(--display);font-weight:800;font-size:17px;text-transform:uppercase;letter-spacing:.04em">Latest ${lg.toUpperCase()} news</h3><div class="lv-news">${s.news.map(n => `<a class="lv-n" href="${esc(n.url)}" target="_blank" rel="noopener"><b>${esc(n.h)}</b>${n.d?`<span>${esc(n.d)}</span>`:""}<small>ESPN · ${n.at?new Date(n.at).toLocaleString("en-US",{timeZone:"America/New_York",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):""}</small></a>`).join("")}</div>` : ""}`;
   $(`lv-ref-${lg}`).onclick = () => refresh(lg, true);
+  if (lg === "nfl"){ const go = d => { const w = Math.min(18, Math.max(1, (s.week || 1) + d)); window.PB = window.PB || {}; PB.nflWeek = w === s.curWeek ? null : w; S.nfl.games = []; S.nfl.week = w; S.nfl.open = null; S.nfl.box = null; RES.nfl.items = []; RES.nfl.at = 0; refresh("nfl", false); }; const wp = $("wk-prev"), wn = $("wk-next"); if (wp) wp.onclick = () => go(-1); if (wn) wn.onclick = () => go(1); }
   $(`lv-auto-${lg}`).onchange = ev => { auto = ev.target.checked; try { localStorage.setItem("pb-live-auto", auto ? "1" : "0"); } catch {} render("nba"); render("nfl"); };
   const al = $(`lv-allow-${lg}`); if (al) al.onclick = () => refresh(lg, true);
   el.querySelectorAll("details.lv-u").forEach(d => d.addEventListener("toggle", () => { s.exp[d.dataset.id] = d.open; }));
@@ -1878,20 +1899,25 @@ async function loadBox(lg){
   catch (e){ if (s.open === id){ s.box = {err: errText(e).t}; render(lg); } }
 }
 async function refresh(lg, withNews){
-  const s = S[lg]; if (!ready || s.busy) return;
+  const s = S[lg]; if (!ready) return; if (s.busy){ s.again = true; return; }
   s.busy = true; render(lg);
   try {
-    const ymd = etDay(new Date().toISOString()).replace(/-/g, "");
-    const j = await espn(API[lg] + "scoreboard" + (lg === "nba" ? "?dates=" + ymd : ""));
-    s.games = parseBoard(lg, j).filter(g => lg !== "nba" || etDay(g.start) === etDay(new Date().toISOString())).sort((a,b) => (a.state==="in"?0:a.state==="pre"?1:2) - (b.state==="in"?0:b.state==="pre"?1:2) || a.start.localeCompare(b.start));
+    const day = nbaDay(), ymd = day.replace(/-/g, "");
+    const url = API[lg] + "scoreboard" + (lg === "nba" ? "?dates=" + ymd : (window.PB && PB.nflWeek ? `?seasontype=2&week=${PB.nflWeek}&dates=${S.nfl.year || new Date().getFullYear()}` : ""));
+    const j = await espn(url);
+    if (lg === "nfl"){ s.week = j.week?.number || s.week; s.year = j.season?.year || s.year; if (!(window.PB && PB.nflWeek)) s.curWeek = s.week; }
+    s.games = parseBoard(lg, j).filter(g => lg !== "nba" || etDay(g.start) === day).sort((a,b) => (a.state==="in"?0:a.state==="pre"?1:2) - (b.state==="in"?0:b.state==="pre"?1:2) || a.start.localeCompare(b.start));
     s.err = null; s.at = Date.now();
   } catch (e){ s.err = e; }
   if (withNews || !s.news.length){ try { s.news = parseNews(await espn(API[lg] + "news")); } catch {} }
   s.busy = false; render(lg);
+  if (s.again){ s.again = false; return refresh(lg, withNews); }
   if (s.open) loadBox(lg);
   if (!s.err) loadResults(lg, withNews);
 }
 
+let lastNbaDay = nbaDay();
+window.pbDay = lg => { const d = nbaDay(); if (lg !== "nba" || d === lastNbaDay) return; lastNbaDay = d; if (!ready) return; S.nba.games = []; S.nba.open = null; S.nba.box = null; RES.nba.items = []; RES.nba.at = 0; refresh("nba", false); };
 const activeLg = () => document.getElementById("tab-nfl")?.hidden === false ? "nfl" : "nba";
 setInterval(() => {
   if (!auto || !ready || document.hidden) return;
