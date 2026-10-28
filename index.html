@@ -2220,6 +2220,7 @@ function evaluate(lg, id, g, row){
   const P = mu => pOver(mu, sd0 * Math.max(.5, mu / Math.max(mu0r, .05)), line, count);
   const io = imp(ov), iu = imp(un);
   const pm = iu != null ? io / (io + iu) : Math.min(.97, io * .955);
+  if (pm < .2 || pm > .8) return {skip:1};
   const steps = []; let mu = mu0r, p = P(mu);
   const push = (label, detail, pNew, muNew) => { steps.push({label, detail, d: pNew - p}); p = pNew; if (muNew != null) mu = muNew; };
   const baseP = p;
@@ -2356,7 +2357,7 @@ function view(lg){
       <li><b>Questionable players</b> lose ${QUESTIONABLE} points on the Over. Out and Doubtful players are skipped.</li>
       <li><b>Score</b> = 50 + 2.5 × edge (model chance minus price, in points), capped 0–99. It is a ranking aid, not a guarantee; small samples and missing context can make it wrong.</li></ol></details>
     ${bar}${body}
-    <p class="pe-foot">${asof ? `Lines as of ${esc(asof)}. ` : ""}Form data: this season's box scores.${SKIP[lg] ? ` ${SKIP[lg]} props skipped (player out, line far from his usual output, or fewer than 3 games of history).` : ""}${loadErr ? ` Some feeds failed: ${esc(loadErr)}.` : ""}</p>`;
+    <p class="pe-foot">${asof ? `Lines as of ${esc(asof)}. ` : ""}Form data: this season's box scores.${SKIP[lg] ? ` ${SKIP[lg]} props skipped (player out, line far from his usual output, lopsided price, or fewer than 3 games of history).` : ""}${loadErr ? ` Some feeds failed: ${esc(loadErr)}.` : ""}</p>`;
 }
 const renderAll = () => { view("nba"); view("nfl"); };
 function mount(lg){
