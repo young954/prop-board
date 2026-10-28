@@ -309,6 +309,36 @@ def step_games_and_slate(games, slate, market, injuries):
     return tonight
 
 
+def step_upcoming(slate):
+    """Next 7 days of scheduled games (teams, tip-off, DraftKings lines via ESPN) so the slate can page ahead."""
+    n = 0
+    for k in range(1, 8):
+        ymd = (dt.date.fromisoformat(TODAY) + dt.timedelta(days=k)).strftime("%Y%m%d")
+        sb = soft(SB + "scoreboard?dates=" + ymd, f"Scoreboard {ymd}")
+        for ev in (sb or {}).get("events") or []:
+            if dig(ev, "status", "type", "state") != "pre":
+                continue
+            gid, a, h, t = game_id(ev)
+            if gid[:10] <= TODAY:
+                continue
+            o = odds({"pickcenter": ev["competitions"][0].get("odds") or []}) or {}
+            sl = {"away": a, "awayName": t["away"]["team"].get("shortDisplayName", ""), "home": h,
+                  "homeName": t["home"]["team"].get("shortDisplayName", ""), "start": iso_z(ev["date"]),
+                  "src": "am", "status": "scheduled"}
+            old = slate.get(gid, {})
+            for key in ("mlA", "mlH", "ou"):
+                v = o.get(key)
+                if v is not None:
+                    sl[key] = v
+                elif key in old:
+                    sl[key] = old[key]
+            if slate.get(gid) != sl:
+                slate[gid] = sl
+                n += 1
+    if n:
+        notes.append(f"{n} upcoming games on the schedule")
+
+
 def step_props(props, tonight):
     """NBA props from Action Network (DraftKings, FanDuel, BetMGM, Caesars, then consensus). See anprops.py."""
     import anprops
@@ -507,6 +537,10 @@ def main():
     games, slate, market = load("games"), load("slate"), load("market")
     injuries, props, h2h, dvp = load("injuries"), load("props"), load("h2h"), load("dvp")
     tonight = step_games_and_slate(games, slate, market, injuries)
+    try:
+        step_upcoming(slate)
+    except Exception as e:  # noqa: BLE001
+        errors.append(f"Upcoming schedule failed: {type(e).__name__} {str(e)[:80]}")
     nprops = step_props(props, tonight) if tonight else 0
     positions = step_positions({}) if tonight else {}
     nh = 0
