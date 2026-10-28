@@ -279,21 +279,21 @@ footer a{color:var(--court)}
     <div class="src" id="n-src"></div>
   </section>
 
-  <section class="x-sec" aria-labelledby="xn-mkt-h"><h2 id="xn-mkt-h">Line movement &amp; betting splits <small>Week 7: opening vs current spread and total, public bets vs money, win probability and the reasons lines moved</small></h2><div class="x-grid" id="xn-mkt"><p class="muted">Loading…</p></div></section>
+  <section class="x-sec" aria-labelledby="xn-mkt-h"><h2 id="xn-mkt-h">Line movement &amp; betting splits <small>This week: opening vs current spread and total, and moneylines from DraftKings</small></h2><div class="x-grid" id="xn-mkt"><p class="muted">Loading…</p></div></section>
 
-  <section class="x-sec" aria-labelledby="xn-props-h"><h2 id="xn-props-h">Book lines vs history <small>Posted Thursday Night Football props checked against each player's last 5, full season and last year's game vs this opponent</small></h2><div class="seg" id="xn-pf" role="group" aria-label="Filter posted lines"></div><div class="x-grid" id="xn-props"><p class="muted">Loading…</p></div></section>
+  <section class="x-sec" aria-labelledby="xn-props-h"><h2 id="xn-props-h">Book lines vs history <small>This week's posted DraftKings props checked against each player's last 5, full season and last year's games vs this opponent. Open = the first line the board captured</small></h2><div class="seg" id="xn-pf" role="group" aria-label="Filter posted lines"></div><div class="x-grid" id="xn-props"><p class="muted">Loading…</p></div></section>
 
   <section aria-labelledby="n-lh" style="display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:16px">
-    <h2 id="n-lh">Most appealing props <small>Week 7 players not on the injury report as Out or Doubtful, cleared in every one of their last 5 games · <span class="dvpb">DvP</span> = named on the defense-vs-position sheet</small></h2>
+    <h2 id="n-lh">Most appealing props <small>This week's players not on the injury report as Out or Doubtful, cleared in every one of their last 5 games · <span class="dvpb">DvP</span> = named on the defense-vs-position sheet</small></h2>
     <div class="locks" id="n-locks"></div>
   </section>
 
   <section aria-labelledby="n-dh" style="display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:16px">
-    <h2 id="n-dh">Defense vs position <small>Every Week 7 game: where each defense ranks in what it allows to each position, from play-by-play stats for Weeks 1–6 (top 10 shown, ties share a rank; ranks can differ by a spot from sites that break ties differently), and the players it sets up</small></h2>
+    <h2 id="n-dh">Defense vs position <small>Every game this week: where each defense ranks in what it allows to each position, from this season's box scores (top 10 shown, ties share a rank), and the players it sets up</small></h2>
     <div class="dvpg" id="n-dvp"></div>
   </section>
 
-  <section class="x-sec" aria-labelledby="xn-inj-h"><h2 id="xn-inj-h">Injury report <small>Week 7 designations (Thursday game set; Sunday and Monday statuses come out Friday)</small></h2><div class="x-grid" id="xn-inj"><p class="muted">Loading…</p></div></section>
+  <section class="x-sec" aria-labelledby="xn-inj-h"><h2 id="xn-inj-h">Injury report <small>This week's designations from the ESPN injury report (game statuses usually come out Friday)</small></h2><div class="x-grid" id="xn-inj"><p class="muted">Loading…</p></div></section>
 
   <div class="controls">
     <div class="seg" id="n-views" role="group" aria-label="Show"></div>
@@ -319,7 +319,7 @@ footer a{color:var(--court)}
   </div>
 
   <footer>
-    Game logs and injury reports from <a href="https://github.com/nflverse/nflverse-data" target="_blank" rel="noopener">nflverse</a> (weeks 1–6). Opening lines from DraftKings via <a href="https://www.cbssports.com/nfl/news/nfl-week-7-odds-2026-early-lines-chiefs-seahawks-packers-lions-browns/" target="_blank" rel="noopener">CBS Sports</a>. Defense-vs-position sheet from 5280 Sports Group / TommyLocks (Week 7). Prop lines here come from the data, not a sportsbook's posted line, so check the book before betting. Line movement and bet percentages from Action Network; current totals and moneylines from bet365 via FOX Sports; TNF splits and props from SportsBettingDime, Hard Rock Bet and Kalshi; injuries from NFL.com, DraftKings Network and Yahoo Sports; win probabilities from the league data feed.
+    Game logs from <a href="https://github.com/nflverse/nflverse-data" target="_blank" rel="noopener">nflverse</a> for Weeks 1–6, then ESPN box scores; 2025 head-to-head games from ESPN game logs. Lines, injuries and schedule from ESPN (lines are DraftKings); posted props from DraftKings. Prop lines in the player table come from the data, not a sportsbook, so check the book before betting. Updates itself every 30 minutes.
   </footer>
 </div>
 </div>
@@ -327,7 +327,7 @@ footer a{color:var(--court)}
 <script>
 /* ---------- Standalone mode: serves the board from data/*.json (refreshed by the GitHub robot) ---------- */
 (() => {
-  const BASE = "data/", REFRESH = 120000, subs = {};
+  const BASE = "", REFRESH = 120000, subs = {};
   const snap = obj => ({docs: Object.entries(obj || {}).filter(([id]) => !id.startsWith("_")).map(([id, d]) => ({id, data: () => d}))});
   async function tick(name){
     const c = subs[name];
@@ -734,7 +734,7 @@ const last = n => n.trim().split(/\s+/).filter(x => !/^(jr\.?|sr\.?|ii|iii|iv)$/
 function gameOf(t){ return slate.find(g => g.away===t || g.home===t); }
 function dvpFor(p){
   const g = gameOf(p.team); if (!g) return [];
-  const d = dvp[`w07-${g.away}-${g.home}`]; if (!d) return [];
+  const d = dvp[g.id]; if (!d) return [];
   const ln = last(p.name);
   return d.rows.filter(r => r[0] !== p.team && r[3].split("/").some(x => last(x.replace(/\(.*?\)/g,"")) === ln));
 }
@@ -864,18 +864,18 @@ function renderSlate(){
     const when = new Date(g.start).toLocaleString("en-US",{timeZone:"America/New_York",weekday:"short",hour:"numeric",minute:"2-digit"})+" ET";
     const top = done?`<span class="fn">Final</span>`:live?`<span class="lv">● Live</span>`:`<span>${when}${g.tag?" · "+esc(g.tag):""}</span>`;
     const tr=(ab,line,sc,win,lose)=>`<div class="tm-row${lose?" lose":""}"><span class="ab">${esc(ab)}</span><span class="ml${win?" win":""}" title="Moneyline">${ml(line)}</span><span class="sc">${has?sc:""}</span></div>`;
-    const hasD = dvp[`w07-${g.away}-${g.home}`];
+    const hasD = dvp[g.id];
     return `<article class="gm${live?" live":""}"><div class="gtop">${top}<span>${g.away} @ ${g.home}${hasD?'<span class="dvpb">DvP</span>':""}</span></div>
       ${tr(g.away,g.mlA,g.as,done&&wA,done&&wH)}${tr(g.home,g.mlH,g.hs,done&&wH,done&&wA)}
       <div class="ou"><span>O/U <b>${g.ou ?? "—"}</b></span><span class="tot">${has?"Total "+(g.as+g.hs):""}</span>${res}</div></article>`;
   }).join("") || `<p class="muted">No games on the schedule yet.</p>`;
-  $("n-sum").innerHTML = `<span><b>${list.length}</b> games</span>` + (fin?`<span>Favorites <b>${fav[0]}–${fav[1]}</b></span><span>Overs <b>${ov[0]}</b> · Unders <b>${ov[1]}</b></span>`:"") + `<span>Bye: BUF, JAX, LAC, WAS</span>`;
-  $("n-src").textContent = "Opening lines from DraftKings, posted Sunday night after Week 6." + (list.some(g=>g.status!=="final")?" Scores update as games finish.":"");
+  $("n-sum").innerHTML = `<span><b>${list.length}</b> games</span>` + (fin?`<span>Favorites <b>${fav[0]}–${fav[1]}</b></span><span>Overs <b>${ov[0]}</b> · Unders <b>${ov[1]}</b></span>`:"") + (() => { const playing = new Set(list.flatMap(g => [g.away, g.home])); const bye = Object.keys(teams).filter(t => !playing.has(t)).sort(); return bye.length && list.length ? `<span>Bye: ${bye.join(", ")}</span>` : ""; })();
+  $("n-src").textContent = "Lines from DraftKings via ESPN." + (list.some(g=>g.status!=="final")?" Scores update as games finish.":"");
 }
 function renderDvp(){
-  const ids = Object.keys(dvp).sort((a,b) => { const ga=slate.find(g=>`w07-${g.away}-${g.home}`===a), gb=slate.find(g=>`w07-${g.away}-${g.home}`===b); return (ga?.start||"").localeCompare(gb?.start||""); });
+  const ids = Object.keys(dvp).filter(id => slate.some(g => g.id === id)).sort((a,b) => { const ga=slate.find(g=>g.id===a), gb=slate.find(g=>g.id===b); return (ga?.start||"").localeCompare(gb?.start||""); });
   $("n-dvp").innerHTML = ids.length ? ids.map(id => { const [, a, h] = id.split("-"); const g = slate.find(x=>x.away===a&&x.home===h);
-    return `<div class="dv"><h3>${a} @ ${h}${g?.tag?` <small class="muted" style="font-family:var(--body);font-size:12px;font-weight:400;text-transform:none;letter-spacing:0">${esc(g.tag)}</small>`:""}</h3><div class="src">${dvp[id].src==="computed"?"Computed from Weeks 1–6, same method as the sheet":"Players from your 5280 / TommyLocks sheet; numbers re-checked against Weeks 1–6 data"}</div>${dvp[id].rows.map(r=>`<div class="dvr"><span class="pp">${esc(r[0])} D<br>vs ${esc(r[1])}</span><span><span class="tx">Allows ${esc(r[2])}</span><br><span class="tg2">${esc(r[3])}</span></span></div>`).join("")}</div>`; }).join("")
+    return `<div class="dv"><h3>${a} @ ${h}${g?.tag?` <small class="muted" style="font-family:var(--body);font-size:12px;font-weight:400;text-transform:none;letter-spacing:0">${esc(g.tag)}</small>`:""}</h3><div class="src">${dvp[id].src==="computed"?"Computed from this season's box scores":"Players from your 5280 / TommyLocks sheet"}</div>${dvp[id].rows.map(r=>`<div class="dvr"><span class="pp">${esc(r[0])} D<br>vs ${esc(r[1])}</span><span><span class="tx">Allows ${esc(r[2])}</span><br><span class="tg2">${esc(r[3])}</span></span></div>`).join("")}</div>`; }).join("")
     : `<p class="muted">No cheat sheet loaded for this week.</p>`;
 }
 function render(){
@@ -1846,7 +1846,7 @@ setInterval(() => { if (today() !== day) rebuild(); }, 60000);
   const hd = document.querySelector("#tab-nba header"); if (hd) hd.after(el);
   async function load(){
     try {
-      const r = await fetch("data/status.json?t=" + Date.now(), {cache: "no-store"}); if (!r.ok) return;
+      const r = await fetch("status.json?t=" + Date.now(), {cache: "no-store"}); if (!r.ok) return;
       const s = await r.json(), mins = Math.round((Date.now() - Date.parse(s.updated_at)) / 60000);
       const age = mins < 1 ? "just now" : mins < 90 ? mins + " min ago" : Math.round(mins / 60) + " hr ago";
       el.innerHTML = `<span>Auto-updates every 30 min, 10 AM–2 AM ET</span><span>Last update <b>${age}</b> (${s.updated_et})</span>` +

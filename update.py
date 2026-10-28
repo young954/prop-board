@@ -16,7 +16,7 @@ import urllib.request
 from zoneinfo import ZoneInfo
 
 ET = ZoneInfo("America/New_York")
-DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+DATA = os.environ.get("PB_DATA") or os.path.dirname(os.path.abspath(__file__))  # data files sit next to this script
 FIXTURES = os.environ.get("PB_FIXTURES")  # testing only: folders of saved responses
 MAP = {"SA": "SAS", "NO": "NOP", "GS": "GSW", "WSH": "WAS", "NY": "NYK", "UTAH": "UTA"}
 ESPN_ABBR = {"SAS": "sa", "NOP": "no", "GSW": "gs", "WAS": "wsh", "NYK": "ny", "UTA": "utah"}
@@ -86,6 +86,7 @@ def load(col):
 
 def save(col, d):
     p = os.path.join(DATA, col + ".json")
+    os.makedirs(os.path.dirname(p), exist_ok=True)
     tmp = p + ".tmp"
     with open(tmp, "w") as f:
         json.dump(d, f, separators=(",", ":"), sort_keys=True)

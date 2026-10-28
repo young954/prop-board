@@ -1,13 +1,14 @@
 # Prop Board
 
-NBA prop board that updates itself. A GitHub Actions robot runs `update.py`
+NBA prop board that updates itself. A GitHub Actions robot runs `update.py` and `nfl_update.py`
 every 30 minutes (10 AM to 2 AM Eastern), pulls ESPN scores, box scores,
-odds, injuries, game logs and DraftKings props, saves them to `data/`, and
+odds, injuries, game logs and DraftKings props, saves them as the .json files in this repo, and
 republishes the site.
 
-- Site: `index.html` (reads `data/*.json`)
+- Site: `index.html` (reads the .json files)
 - Robot: `.github/workflows/update.yml`
 - Run it by hand: Actions tab → Update Prop Board → Run workflow
-- Last run's status and any errors: `data/status.json` (also shown at the top of the site)
+- Last run's status and any errors: `status.json` (also shown at the top of the site)
 
-The NFL tab shows the data it was set up with; only the NBA side auto-updates.
+The NFL side (`nfl_update.py`) runs right after: weekly box scores into player logs, this week's
+slate, lines, injuries, DraftKings props, head-to-head vs this week's opponent and defense vs position.
