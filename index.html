@@ -221,7 +221,7 @@ footer a{color:var(--court)}
     <div class="src" id="src"></div>
   </section>
 
-  <section class="x-sec" aria-labelledby="x-mkt-h"><h2 id="x-mkt-h">Line movement &amp; betting splits <small>Where the spread and total opened and sit now, how many people bet each side vs how much money is on it, win probability, and what moved the number</small></h2><div class="x-grid" id="x-mkt"><p class="muted">Loading…</p></div></section>
+  <section class="x-sec" aria-labelledby="x-mkt-h"><h2 id="x-mkt-h">Game odds &amp; how they moved <small>Who's favored, the expected score, each team's chance to win, and where people are betting. "Opened" means the first number the sportsbook posted.</small></h2><details class="x-gl"><summary>New to betting? Plain-English guide</summary><ul><li><b>Point spread</b>: the sportsbook's guess at the winning margin. If a team is favored by 3.5, they have to win by 4 or more for a bet on them to win. A bet on the other team wins if they win, or lose by 3 or fewer.</li><li><b>Total (over/under)</b>: the expected combined score of both teams. You bet that the real total ends up over or under it.</li><li><b>Chance to win</b>: how likely each team is to win the game, worked out from the sportsbook's odds.</li><li><b>Opened vs now</b>: the first number the sportsbook posted versus today's number. Changes show where bettors and sportsbooks are leaning.</li><li><b>Bets vs money</b>: bets counts tickets, money counts dollars. A lot more money than bets on one side usually means bigger bettors.</li></ul></details><div class="x-grid" id="x-mkt"><p class="muted">Loading…</p></div></section>
 
   <section class="x-sec" aria-labelledby="x-props-h"><h2 id="x-props-h">Book lines vs history <small>Real posted prop lines for the day picked in the slate, checked against every game this season and last season's meetings with tonight's opponent. Green edge: cleared more often than the price implies. Open = the first DraftKings line the board captured that day, next to where it sits now</small></h2><div class="seg" id="x-pf" role="group" aria-label="Filter posted lines"></div><div class="x-grid" id="x-props"><p class="muted">Loading…</p></div></section>
 
@@ -280,7 +280,7 @@ footer a{color:var(--court)}
     <div class="src" id="n-src"></div>
   </section>
 
-  <section class="x-sec" aria-labelledby="xn-mkt-h"><h2 id="xn-mkt-h">Line movement &amp; betting splits <small>This week: opening vs current spread and total, and moneylines from DraftKings</small></h2><div class="x-grid" id="xn-mkt"><p class="muted">Loading…</p></div></section>
+  <section class="x-sec" aria-labelledby="xn-mkt-h"><h2 id="xn-mkt-h">Game odds &amp; how they moved <small>This week: who's favored, the expected score, each team's chance to win, and what changed since the lines opened.</small></h2><details class="x-gl"><summary>New to betting? Plain-English guide</summary><ul><li><b>Point spread</b>: the sportsbook's guess at the winning margin. If a team is favored by 3.5, they have to win by 4 or more for a bet on them to win. A bet on the other team wins if they win, or lose by 3 or fewer.</li><li><b>Total (over/under)</b>: the expected combined score of both teams. You bet that the real total ends up over or under it.</li><li><b>Chance to win</b>: how likely each team is to win the game, worked out from the sportsbook's odds.</li><li><b>Opened vs now</b>: the first number the sportsbook posted versus today's number. Changes show where bettors and sportsbooks are leaning.</li><li><b>Bets vs money</b>: bets counts tickets, money counts dollars. A lot more money than bets on one side usually means bigger bettors.</li></ul></details><div class="x-grid" id="xn-mkt"><p class="muted">Loading…</p></div></section>
 
   <section class="x-sec" aria-labelledby="xn-props-h"><h2 id="xn-props-h">Book lines vs history <small>This week's posted DraftKings props checked against each player's last 5, full season and last year's games vs this opponent. Open = the first line the board captured</small></h2><div class="seg" id="xn-pf" role="group" aria-label="Filter posted lines"></div><div class="x-grid" id="xn-props"><p class="muted">Loading…</p></div></section>
 
@@ -997,48 +997,72 @@ function propCard(lg, row, gid){
     </div>`};
 }
 
+const NFLN = {ARI:"Cardinals",ATL:"Falcons",BAL:"Ravens",BUF:"Bills",CAR:"Panthers",CHI:"Bears",CIN:"Bengals",CLE:"Browns",DAL:"Cowboys",DEN:"Broncos",DET:"Lions",GB:"Packers",HOU:"Texans",IND:"Colts",JAX:"Jaguars",KC:"Chiefs",LV:"Raiders",LAC:"Chargers",LA:"Rams",MIA:"Dolphins",MIN:"Vikings",NE:"Patriots",NO:"Saints",NYG:"Giants",NYJ:"Jets",PHI:"Eagles",PIT:"Steelers",SF:"49ers",SEA:"Seahawks",TB:"Buccaneers",TEN:"Titans",WAS:"Commanders"};
+const MKT_LBL = {Spread:"Point spread", Total:"Over/under total", Moneyline:"Win outright"};
 function splitBar(r){
   const [mkt, side, bets, money, src] = r;
   const gap = money != null && bets != null ? money - bets : null;
   let read;
-  if (gap != null && gap >= 5) read = `<span class="x-read up">Bigger bettors like ${esc(side)}: ${pct(money)} of the money from ${pct(bets)} of the bets.</span>`;
-  else if (gap != null && gap <= -5) read = `<span class="x-read dn">Mostly small, casual bets on ${esc(side)}: ${pct(bets)} of bets but only ${pct(money)} of the money.</span>`;
-  else if (bets != null && bets >= 65) read = `<span class="x-read">Popular pick: most bettors are on ${esc(side)}, and the money agrees.</span>`;
-  else read = `<span class="x-read">Bets and money roughly agree, so no strong signal on ${esc(side)}.</span>`;
+  if (gap != null && gap >= 5) read = `<span class="x-read up">Fewer bets but more money on ${esc(side)}: ${pct(bets)} of bets, ${pct(money)} of the dollars. That usually means bigger bettors like ${esc(side)}.</span>`;
+  else if (gap != null && gap <= -5) read = `<span class="x-read dn">Lots of small bets on ${esc(side)} (${pct(bets)} of bets) but only ${pct(money)} of the dollars. Mostly casual bettors.</span>`;
+  else if (bets != null && bets >= 65) read = `<span class="x-read">Most bettors are on ${esc(side)}, and the money agrees.</span>`;
+  else read = `<span class="x-read">Bets and money roughly match, so there's no strong signal on ${esc(side)}.</span>`;
   const row = (lbl, v, cls) => `<div class="x-br"><span class="x-bl">${lbl}</span><div class="x-track"><span class="${cls}" style="width:${v??0}%"></span></div><span class="x-bv">${pct(v)}</span></div>`;
-  return `<div class="x-sr"><div class="x-sl"><span>${esc(mkt)} · <b>${esc(side)}</b></span><span class="x-src">${esc(src)}</span></div>
+  return `<div class="x-sr"><div class="x-sl"><span>${esc(MKT_LBL[mkt] || mkt)} · <b>${esc(side)}</b></span><span class="x-src">${esc(src)}</span></div>
     <div role="img" aria-label="${esc(side)}: ${pct(bets)} of bets${money!=null?", "+pct(money)+" of money":""}">
       ${row("Bets", bets, "b")}${money!=null?row("Money", money, "m"):""}</div>
     ${money!=null?read:""}</div>`;
 }
-const SPLIT_KEY = `<div class="x-key"><span><i class="b"></i>Bets: share of people who bet this side</span><span><i class="m"></i>Money: share of dollars on this side</span><span class="x-keyhint">When the money is a lot higher than the bets, bigger bettors are on that side.</span></div>`;
+const SPLIT_KEY = `<div class="x-key"><span><i class="b"></i>Bets = share of the bets placed (number of tickets)</span><span><i class="m"></i>Money = share of the dollars wagered</span><span class="x-keyhint">If the money share is a lot bigger than the bets share, bigger bettors are on that side.</span></div>`;
 
 function marketCard(id, m, g){
   const [A, H] = id.split("-").slice(-2);
-  const shO = m.shO, sh = m.sh, mv = shO != null && sh != null ? sh - shO : 0;
-  const favNow = sh < 0 ? H : sh > 0 ? A : "PK";
+  const nm = t => (g && (t === A ? g.awayName : t === H ? g.homeName : "")) || NFLN[t] || t;
+  const sh = m.sh, shO = m.shO;
+  const fav = sh == null ? null : sh < 0 ? H : sh > 0 ? A : null, pts = sh == null ? null : Math.abs(sh);
+  const favO = shO == null ? null : shO < 0 ? H : shO > 0 ? A : null, ptsO = shO == null ? null : Math.abs(shO);
+  const mv = shO != null && sh != null ? sh - shO : 0;
+  const totO = m.totO ?? g?.ou ?? null, tmv = totO != null && m.tot != null ? m.tot - totO : 0;
+  /* chance to win from the moneylines (book margin removed) */
+  let pA = null;
+  if (m.mlA != null && m.mlH != null){ const ia = imp(m.mlA), ih = imp(m.mlH); pA = 100 * ia / (ia + ih); }
+  else if (m.wpH != null) pA = 100 - m.wpH;
+  const pH = pA == null ? null : 100 - pA;
+  const winFav = pA == null ? null : pA >= pH ? A : H, winDog = winFav === A ? H : winFav === H ? A : null;
+  const dogML = winDog === A ? m.mlA : winDog === H ? m.mlH : null;
+  /* what changed, in plain sentences */
+  const ch = [];
+  if (shO != null && sh != null){
+    if (fav && favO && fav !== favO) ch.push(`The favorite changed. The ${esc(nm(favO))} were favored by ${ptsO} at the start; now the ${esc(nm(fav))} are favored by ${pts}.`);
+    else if (fav && favO && pts !== ptsO) ch.push(`The ${esc(nm(fav))} went from ${ptsO}-point favorites to ${pts}-point favorites, so the sportsbook now thinks they are ${pts > ptsO ? "more" : "less"} likely to win by a lot.`);
+    else if (!fav && favO) ch.push(`It started with the ${esc(nm(favO))} favored by ${ptsO}. Now it's a toss-up.`);
+    else if (fav && !favO) ch.push(`It started as a toss-up. Now the ${esc(nm(fav))} are favored by ${pts}.`);
+  }
+  if (tmv) ch.push(`The expected total went ${tmv > 0 ? "up" : "down"} ${Math.abs(tmv)} (from ${totO} to ${m.tot}), so the sportsbook now expects a ${tmv > 0 ? "higher" : "lower"}-scoring game.`);
+  if (!ch.length) ch.push("Nothing has moved since the lines opened.");
+  /* big bettors vs the crowd */
   const homeBets = (m.splits||[]).find(r => r[0]==="Spread" && r[1].startsWith(H+" ") && r[4]==="Action Network")?.[2];
-  let rlm = "";
+  let flag = "";
   if (mv && homeBets != null){
     const towardHome = mv < 0;
-    if ((towardHome && homeBets < 45) || (!towardHome && homeBets > 55)) rlm = `<span class="x-flag">Reverse line move toward ${towardHome?H:A}</span>`;
+    if (towardHome && homeBets < 45) flag = `Most bets (${pct(100-homeBets)}) are on the ${esc(nm(A))}, but the spread moved toward the ${esc(nm(H))}. That usually means a few big bettors are on the ${esc(nm(H))}.`;
+    else if (!towardHome && homeBets > 55) flag = `Most bets (${pct(homeBets)}) are on the ${esc(nm(H))}, but the spread moved toward the ${esc(nm(A))}. That usually means a few big bettors are on the ${esc(nm(A))}.`;
   }
-  if (shO != null && Math.sign(shO) !== Math.sign(sh) && shO !== 0 && sh !== 0) rlm += `<span class="x-flag warn">Favorite flipped</span>`;
-  const totO = m.totO ?? g?.ou ?? null, tmv = totO != null && m.tot != null ? m.tot - totO : 0;
-  const arrow = d => d > 0 ? "▲" : d < 0 ? "▼" : "";
-  const wp = m.wpH != null ? `<div class="x-wp"><span>${A} ${pct(100-m.wpH)}</span><div class="x-wpb"><span style="width:${100-m.wpH}%"></span></div><span>${H} ${pct(m.wpH)}</span></div>` : "";
+  const wp = pA != null ? `<div class="x-wp"><span>${esc(nm(A))} ${pct(pA)}</span><div class="x-wpb"><span style="width:${pA}%"></span></div><span>${esc(nm(H))} ${pct(pH)}</span></div>` : "";
+  const src = String(m.src || "").replace(/\s*\(.*?\)\s*/g, " ").trim();
   return `<article class="x-mc">
-    <div class="gtop"><span>${g?.start?etTime(g.start):""}${g?.tag?" · "+esc(g.tag):""}</span><span>${A} @ ${H}</span></div>
+    <div class="gtop"><span>${g?.start?etTime(g.start):""}${g?.tag?" · "+esc(g.tag):""}</span><span>${esc(nm(A))} at ${esc(nm(H))}</span></div>
     <div class="x-lines">
-      <div><small>Spread (${H})</small><b>${sp(shO)} → ${sp(sh)}</b><em>${mv?`${arrow(-mv)} ${Math.abs(mv)} toward ${mv<0?H:A}`:"no move"}</em></div>
-      <div><small>Total</small><b>${totO ?? "—"} → ${m.tot ?? "—"}</b><em>${tmv?`${arrow(tmv)} ${Math.abs(tmv)}`:"no move"}</em></div>
-      <div><small>Moneyline</small><b>${A} ${ml(m.mlA)}</b><em>${H} ${ml(m.mlH)}</em></div>
+      <div><small>Who's favored</small><b>${fav ? `${esc(nm(fav))} by ${pts}` : "Toss-up"}</b><em>${fav ? `They need to win by more than ${pts} points for a bet on them to win.` : "Neither team is favored."}</em></div>
+      <div><small>Expected total score</small><b>${m.tot ?? "—"} points</b><em>Both teams' scores added together. You can bet that the real total ends up over or under this number.</em></div>
+      ${winFav ? `<div><small>Chance to win the game</small><b>${esc(nm(winFav))} ${pct(Math.max(pA, pH))}</b><em>${dogML != null && dogML > 0 ? `A $100 bet on the ${esc(nm(winDog))} to win pays $${dogML} if they do.` : `The ${esc(nm(winDog))} are the underdog.`}</em></div>` : ""}
     </div>
     ${wp}
-    ${rlm?`<div class="x-flags">${rlm}</div>`:""}
-    ${(m.splits||[]).length?`<div class="x-splits">${SPLIT_KEY}${m.splits.map(splitBar).join("")}</div>`:""}
+    <div class="x-ch"><h4>What changed since the lines opened</h4><ul>${ch.map(x => `<li>${x}</li>`).join("")}</ul></div>
+    ${flag ? `<div class="x-flags"><span class="x-flag">${flag}</span></div>` : ""}
+    ${(m.splits||[]).length?`<div class="x-splits"><h4 class="x-h4">Where the bets and money are going</h4>${SPLIT_KEY}${m.splits.map(splitBar).join("")}</div>`:""}
     ${(m.notes||[]).length?`<ul class="x-notes">${m.notes.map(n=>`<li>${esc(n)}</li>`).join("")}</ul>`:""}
-    <div class="x-src">${esc(m.src||"")} · ${asof(m.asof)}</div>
+    <div class="x-src">${src ? "Odds from " + esc(src) + " · " : ""}${asof(m.asof)}</div>
   </article>`;
 }
 
@@ -1168,8 +1192,8 @@ const chips = document.createElement("nav");
 chips.className = "jchips"; chips.setAttribute("aria-label", "Jump to section");
 bar.appendChild(chips);
 
-const LABEL = {"lv-nba-h":"Games &amp; props","lv-nfl-h":"Games &amp; props","x-mkt-h":"Lines & splits","x-props-h":"Book props",lh:"Best props",dh:"DvP","x-inj-h":"Injuries",
-  "xn-mkt-h":"Lines & splits","xn-props-h":"Book props","n-lh":"Best props","n-dh":"DvP","xn-inj-h":"Injuries"};
+const LABEL = {"lv-nba-h":"Games &amp; props","lv-nfl-h":"Games &amp; props","x-mkt-h":"Game odds","x-props-h":"Book props",lh:"Best props",dh:"DvP","x-inj-h":"Injuries",
+  "xn-mkt-h":"Game odds","xn-props-h":"Book props","n-lh":"Best props","n-dh":"DvP","xn-inj-h":"Injuries"};
 let collapsed = {};
 try { collapsed = JSON.parse(localStorage.getItem("pb-collapsed") || "{}") || {}; } catch {}
 const saveC = () => { try { localStorage.setItem("pb-collapsed", JSON.stringify(collapsed)); } catch {} };
@@ -2464,4 +2488,17 @@ button:focus-visible,select:focus-visible,input:focus-visible,tr:focus-visible{o
 }
 </style>
 
+<style>
+.x-lines{grid-template-columns:1fr!important;gap:10px!important}
+.x-lines div{border-bottom:1px solid var(--line);padding-bottom:9px}.x-lines div:last-child{border-bottom:0;padding-bottom:0}
+.x-lines small{font:700 11px var(--body)!important;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.x-lines em{display:block;font:500 12.5px/1.4 var(--body)!important;color:var(--muted)}
+.x-ch h4,.x-h4{margin:0 0 6px;font:800 12px var(--body);letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.x-ch ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px;font-size:13px;line-height:1.4}
+.x-flag{display:block;border-radius:14px!important;padding:8px 12px!important;white-space:normal;line-height:1.4;font:600 12.5px var(--body)!important;text-transform:none!important;letter-spacing:0!important}
+.x-gl{font-size:13px;color:var(--muted);border:1px solid var(--line);border-radius:16px;background:var(--panel);padding:8px 14px}
+.x-gl summary{cursor:pointer;font-weight:700;color:var(--ink);min-height:28px;display:flex;align-items:center}
+.x-gl ul{margin:8px 0 2px;padding-left:18px;display:flex;flex-direction:column;gap:6px;line-height:1.45}
+.x-gl b{color:var(--ink)}
+</style>
 </body></html>
