@@ -2501,4 +2501,13 @@ button:focus-visible,select:focus-visible,input:focus-visible,tr:focus-visible{o
 .x-gl ul{margin:8px 0 2px;padding-left:18px;display:flex;flex-direction:column;gap:6px;line-height:1.45}
 .x-gl b{color:var(--ink)}
 </style>
+<style>
+:root{--tk-h:38px}
+.tk{position:sticky;top:0;z-index:60;min-height:var(--tk-h);backdrop-filter:none;-webkit-backdrop-filter:none;background:var(--panel)}
+.jbar{top:calc(env(safe-area-inset-top,0px) + var(--tk-h))!important;background:var(--bg)!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;z-index:50!important;transform:translateZ(0)}
+</style>
+<script>
+(function(){var tk=document.getElementById("tk");if(!tk)return;function set(){try{document.documentElement.style.setProperty("--tk-h",Math.round(tk.getBoundingClientRect().height)+"px")}catch(e){}}
+set();addEventListener("resize",set);addEventListener("load",set);if(window.ResizeObserver)new ResizeObserver(set).observe(tk);})();
+</script>
 </body></html>
