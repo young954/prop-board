@@ -5,7 +5,8 @@ One call per league returns every posted prop market for the day (NBA) or the we
 several books at once. For each player and stat we take the first book that has a full
 over/under pair, in this order: DraftKings, FanDuel, BetMGM, Caesars, then Action Network's
 own consensus line. The "Open" book gives the opening line so the board can show how it moved.
-Games that already started are skipped (their last pre-game line stays on the board).
+Games that already started are skipped (their last pre-game line stays on the board) unless include_done=True,
+which is used to backfill finished games' final lines.
 """
 import urllib.parse
 
@@ -35,7 +36,7 @@ def url_for(lg, query):
     return BASE.format(lg=lg, q=urllib.parse.urlencode(q, safe=","))
 
 
-def pull(lg, query, get):
+def pull(lg, query, get, include_done=False):
     """Returns ({(away, home): {(team, name, stat): row}}, {book label: row count}).
 
     Each row is [team, name, stat, line, over odds, under odds, book, open line, open over, open under];
@@ -46,7 +47,7 @@ def pull(lg, query, get):
     ab = lambda t: fix.get(t.get("abbr"), t.get("abbr"))
     ev, teams = {}, {}
     for g in j.get("games") or []:
-        if g.get("status") != "scheduled":
+        if g.get("status") != ("complete" if include_done else "scheduled"):
             continue  # started or finished: books pull or change these lines
         a, h = g["away_team"], g["home_team"]
         ev[g["id"]] = (ab(a), ab(h))
