@@ -2,7 +2,7 @@
 """Prop Board updater. Runs on a timer (GitHub Actions) and keeps data/*.json current.
 
 Sources: ESPN public JSON (scores, box scores, odds via DraftKings, injuries, rosters,
-game logs) and DraftKings player props. Only writes what the feeds return.
+game logs) and Action Network player props (see anprops.py). Only writes what the feeds return.
 Python 3.9+ standard library only.
 """
 import datetime as dt
@@ -55,13 +55,13 @@ def _fixture(url):
     raise IOError("no fixture for " + url)
 
 
-def get(url, tries=2):
+def get(url, tries=2, headers=None):
     if FIXTURES:
         return _fixture(url)
     last = None
     for i in range(tries):
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
+            req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json", **(headers or {})})
             with urllib.request.urlopen(req, timeout=30) as r:
                 return json.loads(r.read().decode("utf-8"))
         except Exception as e:  # noqa: BLE001
@@ -310,44 +310,29 @@ def step_games_and_slate(games, slate, market, injuries):
 
 
 def step_props(props, tonight):
-    rows_by = {}
-    got_any = False
-    for cat, sub, stat in DK_SUBS:
-        d = soft(DK.format(cat, sub), f"DraftKings {stat} props")
-        if not d:
-            continue
-        got_any = True
-        ev = {}
-        for e in d.get("events") or []:
-            ps = {p.get("venueRole"): m(dig(p, "metadata", "shortName") or "") for p in e.get("participants") or []}
-            if ps.get("Away") and ps.get("Home"):
-                ev[str(e["id"])] = ps
-        mk = {str(x["id"]): x for x in d.get("markets") or []}
-        by = {}
-        for s in d.get("selections") or []:
-            by.setdefault(str(s.get("marketId")), []).append(s)
-        for mid, sels in by.items():
-            mm = mk.get(mid)
-            if not mm or mm.get("subcategoryId") != sub:
-                continue
-            ps = ev.get(str(mm.get("eventId")))
-            if not ps:
-                continue
-            gid = f"{TODAY}-{ps['Away']}-{ps['Home']}"
-            if gid not in tonight:
-                continue
-            ov = [x for x in sels if x.get("label") == "Over"]
-            un = [x for x in sels if x.get("label") == "Under"]
-            if not ov or not un:
-                continue
-            o, u = ov[0], un[0]
-            p = (o.get("participants") or [{}])[0]
-            team = ps["Home"] if p.get("venueRole") == "HomePlayer" else ps["Away"]
-            oo, uo = ival(dig(o, "displayOdds", "american")), ival(dig(u, "displayOdds", "american"))
-            key = (team, p.get("name"), stat)
-            rows_by.setdefault(gid, {}).setdefault(key, [team, p.get("name"), stat, o.get("points"), oo, uo, "DraftKings"])
-    if not got_any:
+    """NBA props from Action Network (DraftKings, FanDuel, BetMGM, Caesars, then consensus). See anprops.py."""
+    import anprops
+    by_game, used = {}, {}
+    try:
+        by_game, used = anprops.pull("nba", {"date": TODAY.replace("-", "")}, get)
+    except Exception as e:  # noqa: BLE001
+        errors.append(f"Action Network NBA props didn't load: {type(e).__name__} {str(e)[:80]}")
+    try:  # second source fills anything Action Network lacks (or everything if it failed)
+        import kalshi
+        by_game, added, _tot, kerr = kalshi.merge("nba", by_game, get)
+        errors.extend(kerr)
+        if added:
+            used["Kalshi"] = added
+    except Exception as e:  # noqa: BLE001
+        errors.append(f"Kalshi NBA props didn't load: {type(e).__name__} {str(e)[:80]}")
+    if not by_game:
         return 0
+    rows_by = {}
+    for gid in tonight:
+        parts = gid.split("-")
+        rows_by[gid] = by_game.get((parts[3], parts[4]), {})
+    if used:
+        notes.append("NBA props: " + ", ".join(f"{k} {v}" for k, v in sorted(used.items())))
     total = 0
     for gid in tonight:
         old = props.get(gid) or {}
@@ -356,10 +341,8 @@ def step_props(props, tonight):
         out = []
         for key, r in new.items():
             prev = old_rows.get(key)
-            if prev and len(prev) >= 10 and prev[7] is not None:
-                r = r + prev[7:10]  # keep the first line seen today
-            else:
-                r = r + [r[3], r[4], r[5]]
+            if r[7] is None:  # no opening line from the feed: keep the first line seen today
+                r = r[:7] + (prev[7:10] if prev and len(prev) >= 10 and prev[7] is not None else [r[3], r[4], r[5]])
             out.append(r)
         for key, prev in old_rows.items():  # pulled props (game started): keep last known row
             if key not in new:
