@@ -2003,4 +2003,83 @@ setInterval(() => { if (today() !== day) rebuild(); }, 60000);
 })();
 </script>
 
+<script>
+/* ---------- Data health: freshness bar, load watchdog with retry, phone-friendly controls ---------- */
+(() => {
+"use strict";
+const css = document.createElement("style");
+css.textContent = `
+#pb-fresh{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center;justify-content:center;padding:6px 12px;font:600 11.5px var(--mono,monospace);color:var(--muted,#667);background:var(--panel,#fff);border-bottom:1px solid var(--line,#ddd)}
+#pb-fresh b{font-weight:800;color:var(--ink,inherit)}
+#pb-fresh .pf-dot{width:8px;height:8px;border-radius:50%;background:#2fa84f;display:inline-block;margin-right:5px}
+#pb-fresh[data-s="late"] .pf-dot{background:#e0a21b}
+#pb-fresh[data-s="stale"] .pf-dot,#pb-fresh[data-s="off"] .pf-dot{background:#d23b3b}
+#pb-fresh button,.pb-err button{font:700 12px var(--mono,monospace);border:1.5px solid var(--line,#999);background:var(--panel,#fff);color:inherit;border-radius:6px;padding:6px 12px;min-height:34px;cursor:pointer}
+.pb-err{padding:14px;text-align:center;color:var(--muted,#667);font-size:13.5px;line-height:1.45}
+.pb-err p{margin:0 0 10px}
+@media (max-width:640px){
+  button,.seg button,.jchips button,select,input{min-height:40px}
+  .tw,.lv-tw,.log{-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
+  .seg{display:flex;flex-wrap:wrap;gap:6px}
+  #pb-fresh{font-size:11px;justify-content:flex-start}
+}
+button,a,select{touch-action:manipulation}`;
+document.head.appendChild(css);
+
+const bar = document.createElement("div");
+bar.id = "pb-fresh"; bar.setAttribute("role", "status"); bar.dataset.s = "load";
+bar.innerHTML = `<span><span class="pf-dot"></span>Checking data…</span>`;
+const hdr = document.querySelector("header");
+(hdr && hdr.parentNode ? hdr.parentNode : document.body).insertBefore(bar, hdr || document.body.firstChild);
+
+const ET = {timeZone:"America/New_York", hour:"numeric", minute:"2-digit"};
+const fmt = d => d.toLocaleTimeString("en-US", ET) + " ET";
+const ago = ms => { const m = Math.max(0, Math.round(ms/60000)); return m < 1 ? "just now" : m < 60 ? m + " min ago" : m < 1440 ? Math.floor(m/60) + " h " + (m%60) + " min ago" : Math.floor(m/1440) + " d ago"; };
+const newest = o => { let t = 0; for (const [k, d] of Object.entries(o || {})) { if (k[0] === "_") continue; const a = Date.parse(d && d.asof); if (a > t) t = a; } return t || 0; };
+const j = async u => { const r = await fetch(u + "?t=" + Date.now(), {cache:"no-store"}); if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); };
+let failed = false;
+async function health(){
+  if (!navigator.onLine) { bar.dataset.s = "off"; bar.innerHTML = `<span><span class="pf-dot"></span>You're offline — showing the last data loaded.</span><button type="button" id="pf-r">Retry</button>`; wire(); return; }
+  try {
+    const [st, inj, mk] = await Promise.all([j("status.json"), j("injuries.json").catch(() => null), j("market.json").catch(() => null)]);
+    const up = Date.parse(st.updated_at), age = Date.now() - up, h = new Date().getUTCHours();
+    const season = h >= 14 || h <= 6;          // game hours (UTC) when the robot runs every 30 min
+    const state = age < 60*60000 ? "ok" : age < (season ? 3 : 14)*3600000 ? "late" : "stale";
+    const parts = [`<span><span class="pf-dot"></span>Board <b>${fmt(new Date(up))}</b> · ${ago(age)}</span>`];
+    const it = newest(inj), mt = newest(mk);
+    if (mt) parts.push(`<span>Lines & splits <b>${fmt(new Date(mt))}</b></span>`);
+    if (it) parts.push(`<span>Injuries <b>${fmt(new Date(it))}</b></span>`);
+    parts.push(`<span>Live scores update on screen</span>`);
+    if (state !== "ok") parts.push(`<span>${state === "stale" ? "Data is stale — the update robot may be delayed." : "Update is a little late."}</span><button type="button" id="pf-r">Refresh data</button>`);
+    bar.dataset.s = state; bar.innerHTML = parts.join(""); failed = false; wire();
+  } catch (e) {
+    failed = true; bar.dataset.s = "off";
+    bar.innerHTML = `<span><span class="pf-dot"></span>Couldn't reach the data feed. Showing what's already loaded.</span><button type="button" id="pf-r">Retry</button>`; wire();
+  }
+}
+const wire = () => { const b = document.getElementById("pf-r"); if (b) b.onclick = () => { bar.dataset.s = "load"; bar.innerHTML = `<span><span class="pf-dot"></span>Retrying…</span>`; health().then(() => { sweep(true); if (!failed) location.reload(); }); }; };
+
+/* Load watchdog: any section still saying "Loading…" after 15 s gets a reason and a retry button. */
+const WATCH = {games:"the NBA schedule","x-mkt":"line movement","x-inj":"the injury report",rows:"the NBA box scores","n-games":"the NFL schedule","xn-mkt":"NFL lines","xn-props":"NFL props","xn-inj":"the NFL injury report","n-rows":"the NFL game logs"};
+function sweep(force){
+  for (const [id, what] of Object.entries(WATCH)) {
+    const el = document.getElementById(id); if (!el) continue;
+    const t = (el.textContent || "").trim();
+    if (!/^Loading/i.test(t) && !el.querySelector(".pb-err")) continue;
+    if (el.querySelector(".pb-err") && !force) continue;
+    const why = navigator.onLine ? "It didn't load. The feed may be slow or the data may not be published yet." : "You're offline.";
+    const box = `<div class="pb-err"><p>Couldn't load ${what}. ${why}</p><button type="button" data-retry="${id}">Try again</button></div>`;
+    if (el.tagName === "TBODY") el.innerHTML = `<tr><td colspan="16" class="empty">${box}</td></tr>`; else el.innerHTML = box;
+  }
+}
+document.addEventListener("click", e => { const b = e.target.closest("[data-retry]"); if (!b) return; b.textContent = "Trying…"; b.disabled = true; health().then(() => setTimeout(() => { if (!failed) location.reload(); else { b.disabled = false; b.textContent = "Try again"; } }, 300)); });
+setTimeout(() => sweep(false), 15000);
+setInterval(() => sweep(false), 20000);
+addEventListener("online", () => health().then(() => { if (!failed) location.reload(); }));
+addEventListener("offline", health);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) health(); });
+health(); setInterval(health, 120000);
+})();
+</script>
+
 </body></html>
