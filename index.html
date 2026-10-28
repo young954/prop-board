@@ -202,6 +202,7 @@ footer a{color:var(--court)}
 @media (prefers-reduced-motion:no-preference){.lk{transition:border-color .15s}}
 </style>
 
+<div class="tk" id="tk" role="region" aria-label="Live ticker: milestones, hot streaks and props, NBA and NFL"><div class="tk-lbl">Ticker</div><div class="tk-view"><div class="tk-track" id="tk-track"></div></div></div>
 <div class="wrap">
   <nav class="tabs" role="tablist" aria-label="League">
     <button role="tab" id="tb-nba" aria-controls="tab-nba" aria-selected="true">NBA</button>
@@ -213,7 +214,7 @@ footer a{color:var(--court)}
     <div class="stamp" id="stamp">2026–27 NBA regular season<br>Loading games…</div>
   </header>
 
-  <section class="lv-sec gp-sec" id="gp-nba" data-today="1" aria-labelledby="lv-nba-h"><h2 id="lv-nba-h">Games &amp; props <small>Tonight's games with score, moneyline, total and your posted props inside each one. Tap a game for each prop’s chance to cash and the box score. Use the arrows for other days. Rainbow = hot streak: 10 pts in a quarter, 2 threes in a row within 2:00, 3 assists in a quarter with no turnover, or 5 rebounds in a quarter</small></h2>
+  <section class="lv-sec gp-sec" id="gp-nba" data-today="1" aria-labelledby="lv-nba-h"><h2 id="lv-nba-h">Games &amp; props <small>Tonight's games with score, moneyline, total and your posted props inside each one. Tap a game for each prop’s chance to cash and the box score. Use the arrows for other days. Rainbow = hot streak: 6 pts in a quarter, 2 threes in a row within 2:00, 3 assists in a quarter with no turnover, or 5 rebounds in a quarter</small></h2>
     <div class="slate-h"><div class="dnav"><button id="dp" aria-label="Previous day">‹</button><span class="dl" id="dl">—</span><button id="dn" aria-label="Next day">›</button></div><div class="sum" id="sum"></div></div>
     <div class="lv-sec gp-live" id="lv-nba"></div>
     <div class="games gp-slate" id="games"><p class="muted">Loading the schedule…</p></div>
@@ -1341,6 +1342,25 @@ build();
 .lv-u .mt .res{font-size:10px;padding:1px 5px}
 @media (max-width:640px){.lv-games,.lv-news{grid-template-columns:1fr}.lv-props{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:360px){.lv-props{grid-template-columns:1fr}}
+/* Ticker + milestone chips */
+.tk{position:sticky;top:0;z-index:60;display:flex;align-items:stretch;background:var(--panel);border-bottom:2px solid var(--line);font-family:var(--mono);font-size:12.5px;overflow:hidden}
+.tk-lbl{flex:none;display:flex;align-items:center;gap:6px;padding:0 12px;font:800 12px var(--display);letter-spacing:.08em;text-transform:uppercase;background:var(--miss);color:#fff}
+.tk-view{flex:1;min-width:0;overflow:hidden}
+.tk-track{display:inline-flex;white-space:nowrap;padding:8px 0;animation:tkmove var(--tk-d,60s) linear infinite}
+.tk-view:hover .tk-track,.tk-view:focus-within .tk-track{animation-play-state:paused}
+.tk-i{display:inline-flex;align-items:baseline;gap:7px;padding:0 20px;border-right:1px solid var(--line);color:var(--ink)}
+.tk-i small{color:var(--muted);font-size:11px}
+.tk-lg{font-weight:800;font-size:10.5px;letter-spacing:.06em;padding:1px 5px;border-radius:4px;background:var(--bg);color:var(--muted)}
+.tk-i em{font-style:normal;font-weight:800;font-size:10px;letter-spacing:.05em;color:var(--muted)}
+.tk-i.hit em{color:var(--hit)}.tk-i.pace em{color:var(--court)}.tk-i.top em{color:var(--warn)}
+.tk-i.rb em,.tk-i.rb>span{background:linear-gradient(90deg,#ff3b3b,#ff9f1c,#e6c400,#16b95a,#1a9de0,#7a5cff,#e83cc4);-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:700}
+@keyframes tkmove{to{transform:translateX(-50%)}}
+@media (prefers-reduced-motion:reduce){.tk-view{overflow-x:auto}.tk-track{animation:none}}
+.lv-chips{display:flex;flex-wrap:wrap;gap:5px}
+.lv-chip{font:12px var(--body);border:1px solid var(--line);border-radius:999px;padding:2px 9px;color:var(--ink)}
+.lv-chip b{font-family:var(--mono)}
+.lv-chip small{color:var(--muted);font-size:10.5px}
+.lv-chip.top{border-color:var(--warn)}
 </style>
 <script>
 /* ---------- Live: scores, box scores, live prop tracker, news ---------- */
@@ -1526,7 +1546,7 @@ async function loadResults(lg, force){
 }
 /* ---------- Hot-streak detector (rainbow props) ----------
    Reads ESPN play-by-play and flags a player when any of these happen:
-   q10  = 10+ points in one quarter
+   q6   = 6+ points in one quarter
    3s   = 2 made threes in a row (no missed three between) within 2:00 of game clock, same quarter
    ast3 = 3 assists in one quarter with no turnover between them
    reb5 = 5+ rebounds in one quarter */
@@ -1546,7 +1566,7 @@ function hotStreaks(j){
     const three = /three point|3-pt|3pt/.test(tx);
     if (pl.scoringPlay && pl.scoreValue > 0){
       q.pts += pl.scoreValue;
-      if (q.pts >= 10 && (!a.f.q10 || q.pts > a.f.q10.n)) a.f.q10 = {n:q.pts, t:`${q.pts} pts in ${perLbl(per)}`};
+      if (q.pts >= 6 && (!a.f.q6 || q.pts > a.f.q6.n)) a.f.q6 = {n:q.pts, t:`${q.pts} pts in ${perLbl(per)}`};
       if (pl.scoreValue === 3 || (three && pl.scoreValue !== 1)){
         const L = a.last3;
         if (L && L.per === per && L.sec - sec <= 120 && L.sec >= sec){ const d = L.sec - sec; a.f.t3 = {t:`2 threes in ${d >= 60 ? Math.floor(d / 60) + ":" + String(Math.round(d % 60)).padStart(2, "0") : Math.round(d) + "s"} (${perLbl(per)})`}; }
@@ -1634,7 +1654,7 @@ function hotStreaksNfl(j){
   return out;
 }
 /* which streaks count toward which prop */
-const HOT_REL = {pts:["q10","t3"], tp:["t3"], reb:["reb5"], ast:["ast3"], pr:["q10","t3","reb5"], pa:["q10","t3","ast3"], pra:["q10","t3","reb5","ast3"],
+const HOT_REL = {pts:["q6","t3"], tp:["t3"], reb:["reb5"], ast:["ast3"], pr:["q6","t3","reb5"], pa:["q6","t3","ast3"], pra:["q6","t3","reb5","ast3"],
   ryd:["rq","rp","td"], car:["rq","rp","td"], recyd:["cq","cp","r3","td"], rec:["cq","cp","r3","td"], td:["td","rp","cp","rq","cq"], pyd:["pq"], cmp:["pq"], ptd:["pq"]};
 const hotFor = r => r.hot ? (HOT_REL[r.key] || []).filter(k => r.hot[k]).map(k => r.hot[k].t) : [];
 
@@ -1725,11 +1745,110 @@ function gameUnit(lg, g, it, hasDoc){
   const bx = s.open === g.id;
   return `<details class="lv-u${live?" in":""}" data-id="${g.id}" ${isOpen?"open":""}>
     <summary aria-label="${esc(g.away.ab)} at ${esc(g.home.ab)}"><span class="stt">${statusTxt(g)}</span><span class="sc">${team(g.away, g.done && aw < hw, sl?.mlA)}${team(g.home, g.done && hw < aw, sl?.mlH)}</span><span class="pc">${pc}</span>${meta.length?`<span class="mt">${meta.map(m=>`<span>${m}</span>`).join("")}</span>`:""}</summary>
-    <div class="bd">${body}
+    <div class="bd">${body}${msBlock(lg, g)}
       <div class="bxr"><button type="button" class="lv-bx" data-id="${g.id}" aria-expanded="${bx}">${bx ? "Hide box score" : started ? "Box score" : "Preview"}</button>${g.link?`<a href="${esc(g.link)}" target="_blank" rel="noopener">ESPN game page</a>`:""}</div>
       ${bx ? boxHtml(lg, g, s.box) : ""}</div>
   </details>`;
 }
+
+/* ---------- Milestones + ticker ----------
+   Milestones are game totals read from the box score for EVERY player (not just posted props):
+   NBA: points, rebounds, assists, steals, blocks, 3-pointers made
+   NFL: rushing yards, receiving yards, receptions, touchdowns (rushing + receiving) */
+const MS_NBA = [["pts","PTS",[10,20,30,40,50]],["reb","REB",[5,10,15,20]],["ast","AST",[5,10,15]],["stl","STL",[3,5]],["blk","BLK",[3,5]],["tp","3PM",[3,5,7,9]]];
+const MS_NFL = [["ryd","RUSH YDS",[50,100,150,200]],["recyd","REC YDS",[50,100,150,200]],["rec","REC",[5,8,10,12]],["td","TD",[1,2,3]]];
+const MS = {};
+function statNum(labels, st, label){
+  const i = labels.indexOf(label); if (i < 0) return 0;
+  const v = String(st[i]), x = v.includes("-") && !v.startsWith("-") ? +v.split("-")[0] : v.includes("/") ? +v.split("/")[0] : +v;
+  return isNaN(x) ? 0 : x;
+}
+function milestonesOf(lg, box){
+  const P = {}, out = [];
+  for (const t of box.teams) for (const c of t.cats) for (const r of c.rows){
+    if (r.dnp || !r.st.length) continue;
+    const p = (P[t.ab + "|" + norm(r.n)] ||= {n:r.n, t:t.ab, v:{}});
+    if (lg === "nba"){ for (const [k, l] of [["pts","PTS"],["reb","REB"],["ast","AST"],["stl","STL"],["blk","BLK"],["tp","3PT"]]) p.v[k] = statNum(c.labels, r.st, l); }
+    else if (/rushing/i.test(c.name)){ p.v.ryd = statNum(c.labels, r.st, "YDS"); p.v.td = (p.v.td || 0) + statNum(c.labels, r.st, "TD"); }
+    else if (/receiving/i.test(c.name)){ p.v.recyd = statNum(c.labels, r.st, "YDS"); p.v.rec = statNum(c.labels, r.st, "REC"); p.v.td = (p.v.td || 0) + statNum(c.labels, r.st, "TD"); }
+  }
+  for (const p of Object.values(P)) for (const [k, l, lad] of (lg === "nba" ? MS_NBA : MS_NFL)){
+    const v = p.v[k] || 0; let tier = -1; lad.forEach((x, i) => { if (v >= x) tier = i; });
+    if (tier >= 0) out.push({n:p.n, t:p.t, k, l, v, tier, top:tier === lad.length - 1});
+  }
+  return out;
+}
+async function loadMs(lg, g){
+  const c = MS[lg + g.id];
+  if (c && (c.busy || (c.done && g.done) || Date.now() - c.at < 60000)) return false;
+  const x = (MS[lg + g.id] ||= {at:0, ms:[], hot:[], done:false}); x.busy = true;
+  try {
+    const j = await espn(`${API[lg]}summary?event=${g.id}`), box = parseBox(lg, j);
+    const disp = {}; for (const t of box.teams) for (const cc of t.cats) for (const r of cc.rows) disp[norm(r.n)] = r.n;
+    const hs = lg === "nba" ? hotStreaks(j) : hotStreaksNfl(j), hot = [];
+    for (const [n, f] of Object.entries(hs)) for (const v of Object.values(f)) hot.push({n:disp[n] || n, t:v.t});
+    Object.assign(x, {at:Date.now(), done:!!g.done, ms:milestonesOf(lg, box), hot, busy:false});
+    return true;
+  } catch { x.busy = false; x.at = Date.now(); return false; }
+}
+function msBlock(lg, g){
+  const c = MS[lg + g.id]; if (!c || !c.ms.length) return "";
+  const xs = [...c.ms].sort((a, b) => b.tier - a.tier || b.v - a.v).slice(0, 40);
+  const sub = lg === "nba" ? "points, rebounds, assists, steals, blocks, 3-pointers" : "rush yards, receiving yards, receptions, touchdowns";
+  return `<div class="lv-team"><h4>Milestones <small>${sub}</small></h4><div class="lv-chips">${xs.map(m => `<span class="lv-chip${m.top ? " top" : ""}">${esc(m.n)} <b>${m.v}</b> ${esc(m.l)} <small>${esc(m.t)}</small></span>`).join("")}</div></div>`;
+}
+function tkItems(){
+  const out = [], now = Date.now();
+  for (const lg of ["nba", "nfl"]){
+    const LG = lg.toUpperCase(), s = S[lg], lab = g => `${g.away.ab} @ ${g.home.ab}`;
+    for (const g of s.games){
+      const c = MS[lg + g.id]; if (!c) continue; const live = g.state === "in", st = live ? "LIVE" : "FINAL";
+      for (const h of c.hot) out.push({w:live ? 0 : 3, cls:"rb", lg:LG, tag:"HOT", txt:`${h.n} · ${h.t}`, sub:`${lab(g)} · ${st}`});
+      for (const m of c.ms) out.push({w:(live ? 1 : 4) + (m.top ? -0.5 : 0.5) - m.tier / 20, cls:m.top ? "top" : "", lg:LG, tag:m.top ? "MILESTONE" : "", txt:`${m.n} ${m.v} ${m.l}`, sub:`${lab(g)} · ${st}`});
+    }
+    for (const it of RES[lg].items){
+      if (!it.rows) continue; const f = gameFrac(lg, it.g), done = !!it.done;
+      for (const r of it.rows){
+        const nm = PL[r.key] || r.key, hit = r.v > r.line;
+        if (hit) out.push({w:2, cls:"hit", lg:LG, tag:"CASHED", txt:r.key === "td" ? `${r.name} scored a TD` : `${r.name} ${r.v} ${nm} (o${r.line})`, sub:`${it.A} @ ${it.H}`});
+        else if (!done && f > 0 && f < 1){ const p = cashChance(lg, r, f, false); if (p >= .7) out.push({w:2.5, cls:"pace", lg:LG, tag:"ON PACE", txt:`${r.name} ${r.v}/o${r.line} ${nm} · ${pctTxt(p)} to cash`, sub:`${it.A} @ ${it.H}`}); }
+      }
+    }
+    for (const g of s.games){
+      if (g.state !== "pre") continue;
+      const d = todayDocs(lg).find(x => x.g.id === g.id), n = d ? (d.doc.rows || []).length : 0;
+      out.push({w:6, cls:"", lg:LG, tag:"UP NEXT", txt:`${lab(g)} · ${new Date(g.start).toLocaleTimeString("en-US", {timeZone:"America/New_York", hour:"numeric", minute:"2-digit"})} ET`, sub:n ? `${n} props posted` : ""});
+    }
+  }
+  return out.sort((a, b) => a.w - b.w).slice(0, 60);
+}
+function tkRender(){
+  const el = $("tk-track"); if (!el) return;
+  const it = tkItems();
+  const blank = !S.nba.at && !S.nfl.at ? "Loading live scores…" : "No games live right now. Milestones, hot streaks, cashed props and props on pace show up here as games play.";
+  const html = it.length ? it.map(x => `<span class="tk-i ${x.cls}"><b class="tk-lg">${x.lg}</b>${x.tag ? `<em>${esc(x.tag)}</em>` : ""}<span>${esc(x.txt)}</span>${x.sub ? `<small>${esc(x.sub)}</small>` : ""}</span>`).join("") : `<span class="tk-i"><b class="tk-lg">NBA · NFL</b><span>${blank}</span></span>`;
+  el.innerHTML = html + html;
+  el.style.setProperty("--tk-d", Math.max(35, it.length * 5) + "s");
+}
+let tkBusy = false;
+async function tkTick(){
+  if (!ready || tkBusy || document.hidden) return;
+  tkBusy = true;
+  try {
+    for (const lg of ["nba", "nfl"]){
+      const s = S[lg], now = Date.now();
+      if (!s.busy && (!s.at || (s.games.some(g => g.state === "in") && now - s.at > 60000))) await refresh(lg, false);
+      const gs = s.games.filter(g => g.state === "in" || (g.done && now - Date.parse(g.start) < 3 * 86400e3)).sort((a, b) => b.start.localeCompare(a.start)).slice(0, 10);
+      let fresh = false;
+      for (const g of gs) if (await loadMs(lg, g)) fresh = true;
+      if (fresh) render(lg);
+    }
+  } catch {}
+  tkBusy = false; tkRender();
+}
+setInterval(tkTick, 60000);
+setTimeout(tkTick, 3000);
+setTimeout(tkRender, 500);
 
 function render(lg){
   const s = S[lg], el = $(`lv-${lg}`); if (!el) return;
