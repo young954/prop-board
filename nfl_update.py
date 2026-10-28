@@ -2,7 +2,7 @@
 """NFL side of the Prop Board updater (runs after update.py).
 
 Keeps nfl_teams (player game logs, head-to-head, injury tags), nfl_slate, nfl_dvp and the
-NFL docs in market / injuries / props current from ESPN and DraftKings. Standard library only.
+NFL docs in market / injuries / props current from ESPN and Action Network. Standard library only.
 """
 import datetime as dt
 import json
@@ -417,52 +417,27 @@ def main():
 
     # 4. props with opening lines
     rows_by, got = {}, False
-    for cat, sub, stat in DK_SUBS:
-        d = s_(DK.format(cat, sub), f"DraftKings NFL {stat} props")
-        if not d:
-            continue
+    by_game, used = {}, {}
+    try:
+        import anprops
+        by_game, used = anprops.pull("nfl", {"week": S}, get)
+    except Exception as e:  # noqa: BLE001
+        errors.append(f"Action Network NFL props didn't load: {type(e).__name__} {str(e)[:80]}")
+    try:  # second source fills anything Action Network lacks (or everything if it failed)
+        import kalshi
+        by_game, added, _tot, kerr = kalshi.merge("nfl", by_game, get)
+        errors.extend(kerr)
+        if added:
+            used["Kalshi"] = added
+    except Exception as e:  # noqa: BLE001
+        errors.append(f"Kalshi NFL props didn't load: {type(e).__name__} {str(e)[:80]}")
+    if by_game:
         got = True
-        ev = {}
-        for e in d.get("events") or []:
-            ps = {p.get("venueRole"): t_(dig(p, "metadata", "shortName") or "") for p in e.get("participants") or []}
-            if ps.get("Away") and ps.get("Home"):
-                ev[str(e["id"])] = ps
-        mk = {str(x["id"]): x for x in d.get("markets") or []}
-        by = {}
-        for s in d.get("selections") or []:
-            by.setdefault(str(s.get("marketId")), []).append(s)
-        for mid, sels in by.items():
-            mm = mk.get(mid)
-            if not mm or mm.get("subcategoryId") != sub:
-                continue
-            ps = ev.get(str(mm.get("eventId")))
-            if not ps:
-                continue
-            gid = f"w{S:02d}-{ps['Away']}-{ps['Home']}"
-            if gid not in week_ids:
-                continue
-            if stat == "td":
-                if "Anytime" not in (mm.get("name") or "") and "Anytime" not in (dig(mm, "marketType", "name") or ""):
-                    continue
-                for s in sels:
-                    p = (s.get("participants") or [{}])[0]
-                    if p.get("type") != "Player":
-                        continue
-                    team = ps["Home"] if p.get("venueRole") == "HomePlayer" else ps["Away"]
-                    rows_by.setdefault(gid, {}).setdefault((team, p.get("name"), "td"),
-                                                           [team, p.get("name"), "td", 0.5, ival(dig(s, "displayOdds", "american")), None, "DraftKings"])
-                continue
-            main = [x for x in sels if x.get("main")] or sels
-            ov = [x for x in main if x.get("label") == "Over"]
-            un = [x for x in main if x.get("label") == "Under"]
-            if not ov or not un:
-                continue
-            o, u = ov[0], un[0]
-            p = (o.get("participants") or [{}])[0]
-            team = ps["Home"] if p.get("venueRole") == "HomePlayer" else ps["Away"]
-            rows_by.setdefault(gid, {}).setdefault((team, p.get("name"), stat),
-                                                   [team, p.get("name"), stat, o.get("points"), ival(dig(o, "displayOdds", "american")),
-                                                    ival(dig(u, "displayOdds", "american")), "DraftKings"])
+        for gid in week_ids:
+            parts = gid.split("-")
+            rows_by[gid] = by_game.get((parts[1], parts[2]), {})
+        if used:
+            notes.append("NFL props: " + ", ".join(f"{k} {v}" for k, v in sorted(used.items())))
     nprops = 0
     if got:
         for gid in week_ids:
@@ -472,7 +447,9 @@ def main():
             out = []
             for key, r in new.items():
                 prev = old_rows.get(key)
-                out.append(r + (prev[7:10] if prev and len(prev) >= 10 and prev[7] is not None else [r[3], r[4], r[5]]))
+                if r[7] is None:  # no opening line from the feed: keep the first line seen
+                    r = r[:7] + (prev[7:10] if prev and len(prev) >= 10 and prev[7] is not None else [r[3], r[4], r[5]])
+                out.append(r)
             for key, prev in old_rows.items():
                 if key not in new:
                     out.append(prev if len(prev) >= 10 else prev + [prev[3], prev[4], prev[5]])
