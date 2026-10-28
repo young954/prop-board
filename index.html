@@ -2131,7 +2131,8 @@ const mean = a => a.reduce((x, y) => x + y, 0) / a.length;
 const sdev = a => { if (a.length < 2) return 0; const m = mean(a); return Math.sqrt(a.reduce((s, v) => s + (v - m) * (v - m), 0) / (a.length - 1)); };
 
 /* ---- model constants (all shown to the reader in "How the score works") ---- */
-const K_SHRINK = 12;       // games of evidence needed to trust the model as much as the market
+const K_SHRINK = 6;        // games of evidence needed to trust the model as much as the market
+const K_PRIOR = 8;         // games' worth of weight the posted line gets as the starting projection
 const MAX_EDGE = 0.12;     // the model is never allowed to sit more than 12 points from the market
 const W_FORM = 0.4;        // weight on the last 5 games vs the season average
 const W_H2H = 0.15;        // weight on last year's games vs this opponent (needs 2+ games)
@@ -2214,16 +2215,17 @@ function evaluate(lg, id, g, row){
   const count = M.count.has(key), over = (v, l) => v > l;
   const mu0 = mean(vals), l5 = vals.slice(-5), n5 = l5.length;
   if (line < ((M.minLine || {})[key] || 0) || mu0 < .4 * line || mu0 > 2.2 * line) return {skip:1};
+  const mu0r = (n * mu0 + K_PRIOR * line) / (n + K_PRIOR);
   const sd0 = count ? 0 : (n * sdev(vals) + 4 * M.sd(key, mu0)) / (n + 4);
-  const P = mu => pOver(mu, sd0 * Math.max(.5, mu / Math.max(mu0, .05)), line, count);
+  const P = mu => pOver(mu, sd0 * Math.max(.5, mu / Math.max(mu0r, .05)), line, count);
   const io = imp(ov), iu = imp(un);
   const pm = iu != null ? io / (io + iu) : Math.min(.97, io * .955);
-  const steps = []; let mu = mu0, p = P(mu);
+  const steps = []; let mu = mu0r, p = P(mu);
   const push = (label, detail, pNew, muNew) => { steps.push({label, detail, d: pNew - p}); p = pNew; if (muNew != null) mu = muNew; };
   const baseP = p;
   const o5 = l5.filter(v => over(v, line)).length, oS = vals.filter(v => over(v, line)).length;
   /* 1. recent form */
-  if (n5 >= 3){ const m5 = mean(l5), mu1 = (1 - W_FORM) * mu0 + W_FORM * m5;
+  if (n5 >= 3){ const m5 = mean(l5), m5r = (n5 * m5 + K_PRIOR * line) / (n5 + K_PRIOR), mu1 = (1 - W_FORM) * mu0r + W_FORM * m5r;
     push("Recent form", `Last ${n5} avg ${f1(m5)} (${o5}/${n5} over ${line}) vs season ${f1(mu0)}`, P(mu1), mu1); }
   /* 2. matchup */
   let mdet = [], mu2 = mu;
@@ -2267,7 +2269,7 @@ function evaluate(lg, id, g, row){
   let pf = pm + s * (modelP - pm);
   const gap = pf - pm, cap = Math.abs(gap) > MAX_EDGE ? MAX_EDGE / Math.abs(gap) : 1;
   pf = pm + gap * cap;
-  const rows = [{label:"Season baseline", detail:`Season avg ${f1(mu0)} over ${n} games vs line ${line}`, d: raw * s}];
+  const rows = [{label:"Season baseline", detail:`Season avg ${f1(mu0)} over ${n} games vs line ${line}, pulled toward the line while the sample is small`, d: raw * s}];
   for (const x of steps) rows.push({label:x.label, detail:x.detail, d: x.d * s});
   if (cap < 1) for (const x of rows) x.d *= cap;
   /* own injury status */
@@ -2347,7 +2349,7 @@ function view(lg){
   el.innerHTML = `<h2 id="pe-h-${lg}">Prop Edge Finder <small>Every upcoming posted prop scored against its price. The score comes from a stated projection, never a “lock” label — open any card to see each reason and its size</small></h2>
     <details class="pe-how"><summary>How the score works</summary><ol>
       <li><b>Start from the market.</b> The over/under prices give a chance with the book's margin removed.</li>
-      <li><b>Project the stat.</b> Season average, then ${Math.round(W_FORM * 100)}% weight on the last 5 games, ${Math.round(W_H2H * 100)}% on last year's games against this opponent (2+ games), and a bump if the defense-vs-position sheet names him for that stat (+1% to +6%).</li>
+      <li><b>Project the stat.</b> Season average (pulled toward the posted line while the sample is small: the line counts as ${K_PRIOR} games), then ${Math.round(W_FORM * 100)}% weight on the last 5 games, ${Math.round(W_H2H * 100)}% on last year's games against this opponent (2+ games), and a bump if the defense-vs-position sheet names him for that stat (+1% to +6%).</li>
       <li><b>Adjust for role.</b> Minutes or touches trend over the last 3 games (capped ±${WK_CAP * 100}%), and teammates listed out who normally carry scoring or targets (capped +${INJ_CAP * 100}%).</li>
       <li><b>Turn it into a chance.</b> Counting stats use a Poisson curve; points and yards use a normal curve spread from his own game-to-game swings.</li>
       <li><b>Trust it in proportion to the data.</b> With n games, the model's gap from the market is multiplied by n ÷ (n + ${K_SHRINK}). Early in the season this keeps scores close to the market.</li>
