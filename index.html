@@ -2082,4 +2082,379 @@ health(); setInterval(health, 120000);
 })();
 </script>
 
+<style>
+.pe-intro{margin:0;font-size:13px;color:var(--muted);line-height:1.45}
+.pe-how{font-size:12.5px;color:var(--muted);border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:8px 12px}
+.pe-how summary{cursor:pointer;font-weight:700;color:var(--ink);min-height:28px}
+.pe-how ol{margin:8px 0 2px;padding-left:20px;display:flex;flex-direction:column;gap:4px;line-height:1.4}
+.pe-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.pe-bar select{font:500 13px var(--body);padding:7px 9px;border:1.5px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);min-height:36px}
+.pe-bar .seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.pe-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:10px}
+@media (max-width:400px){.pe-list{grid-template-columns:1fr}}
+.pe-c{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:11px 12px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.pe-c.o{border-left:3px solid var(--hit)}.pe-c.u{border-left:3px solid var(--miss)}
+.pe-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.pe-top .nm{font-weight:800;font-size:15px}.pe-top .tg{font:600 11px var(--mono);color:var(--muted);margin-left:6px}
+.pe-g{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
+.pe-sc{flex:none;text-align:center;border-radius:8px;padding:3px 9px;background:var(--court-soft);color:var(--ink);min-width:48px}
+.pe-sc b{display:block;font:800 20px var(--display,var(--body));line-height:1.1}.pe-sc small{font:600 9.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.pe-c.o .pe-sc{background:var(--hit-soft)}.pe-c.u .pe-sc{background:var(--miss-soft)}
+.pe-pick{font-size:14px}.pe-pick .sd{font:800 12px var(--mono);letter-spacing:.05em;padding:2px 7px;border-radius:4px;margin-right:6px}
+.pe-c.o .sd{background:var(--hit-soft);color:var(--hit)}.pe-c.u .sd{background:var(--miss-soft);color:var(--miss)}
+.pe-pick .od{font:600 12.5px var(--mono);color:var(--muted);margin-left:6px}.pe-pick .sr{font-size:11px;color:var(--muted);margin-left:6px}
+.pe-sum{font-size:12.5px;color:var(--muted)}.pe-sum b{color:var(--ink)}
+.pe-why{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
+.pe-why li{display:flex;gap:8px;font-size:12.5px;line-height:1.35;align-items:baseline}
+.pe-pt{flex:none;min-width:46px;text-align:right;font:700 12px var(--mono)}.pe-pt.pos{color:var(--hit)}.pe-pt.neg{color:var(--miss)}.pe-pt.zero{color:var(--muted)}
+.pe-c details{font-size:12px;color:var(--muted)}.pe-c summary{cursor:pointer;font-weight:700;min-height:28px;display:flex;align-items:center;color:var(--ink)}
+.pe-proj,.pe-mk{margin:6px 0 0;line-height:1.45}
+.pe-tags{display:flex;flex-wrap:wrap;gap:5px}.pe-tag{font:700 10.5px var(--mono);padding:1px 6px;border-radius:4px;background:var(--warn-soft);color:var(--warn)}
+.pe-tag.hi{background:var(--hit-soft);color:var(--hit)}
+.pe-foot{font-size:12px;color:var(--muted)}
+.pe-more{align-self:center}
+</style>
+<script>
+/* ---------- Prop Edge Finder: transparent edge score for every posted prop ---------- */
+(() => {
+"use strict";
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const norm = n => String(n||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z ]/g,"").replace(/\b(jr|sr|ii|iii|iv)\b/g,"").replace(/\s+/g," ").trim();
+const ml = n => n == null ? "—" : (n > 0 ? "+" + n : String(n));
+const imp = o => o == null ? null : o < 0 ? -o / (-o + 100) : 100 / (o + 100);
+const dec = o => o > 0 ? 1 + o / 100 : 1 + 100 / -o;
+const f1 = x => (Math.round(x * 10) / 10).toFixed(1);
+const etDay = iso => new Date(iso).toLocaleDateString("en-CA", {timeZone:"America/New_York"});
+const etTime = iso => new Date(iso).toLocaleTimeString("en-US", {timeZone:"America/New_York", weekday:"short", hour:"numeric", minute:"2-digit"}) + " ET";
+const mean = a => a.reduce((x, y) => x + y, 0) / a.length;
+const sdev = a => { if (a.length < 2) return 0; const m = mean(a); return Math.sqrt(a.reduce((s, v) => s + (v - m) * (v - m), 0) / (a.length - 1)); };
+
+/* ---- model constants (all shown to the reader in "How the score works") ---- */
+const K_SHRINK = 12;       // games of evidence needed to trust the model as much as the market
+const MAX_EDGE = 0.15;     // the model is never allowed to sit more than 15 points from the market
+const W_FORM = 0.4;        // weight on the last 5 games vs the season average
+const W_H2H = 0.15;        // weight on last year's games vs this opponent (needs 2+ games)
+const WK_CAP = 0.05;       // minutes / touches trend can move the projection at most 5%
+const INJ_CAP = 0.08;      // teammates out can lift the projection at most 8%
+const QUESTIONABLE = 3;    // points of probability taken off an Over when the player is questionable
+
+const MODEL = {
+  nba: {
+    stats: {pts:{l:"Points",f:p=>p.pts}, reb:{l:"Rebounds",f:p=>p.reb}, ast:{l:"Assists",f:p=>p.ast}, tp:{l:"3-pointers",f:p=>p.tp},
+            pr:{l:"Pts + Reb",f:p=>p.pts+p.reb}, pa:{l:"Pts + Ast",f:p=>p.pts+p.ast}, pra:{l:"Pts + Reb + Ast",f:p=>p.pts+p.reb+p.ast}},
+    count: new Set(["reb","ast","tp"]),
+    sd: (k, mu) => Math.max(3, (k === "pra" ? .3 : .34) * mu),
+    kw: {pts:["pts","points"], reb:["reb"], ast:["ast"], tp:["3pm"], pr:["pts","reb"], pa:["pts","ast"], pra:["pts","reb","ast"]}
+  },
+  nfl: {
+    stats: {pyd:{l:"Pass yds",f:g=>g[5]}, cmp:{l:"Completions",f:g=>g[3]}, ptd:{l:"Pass TD",f:g=>g[6]}, ryd:{l:"Rush yds",f:g=>g[9]},
+            car:{l:"Carries",f:g=>g[8]}, recyd:{l:"Rec yds",f:g=>g[13]}, rec:{l:"Receptions",f:g=>g[11]}},
+    count: new Set(["cmp","ptd","car","rec"]),
+    sd: (k, mu) => k === "pyd" ? Math.max(40, .3 * mu) : k === "ryd" ? Math.max(12, .75 * mu) : Math.max(14, .8 * mu),
+    kw: {pyd:["pass yd"], cmp:["pass yd"], ptd:["pass td"], ryd:["rush yd"], car:["rush yd"], recyd:["rec yd"], rec:["rec yd"]},
+    work: {rec:12, recyd:12, ryd:8, car:8, pyd:4, cmp:4}
+  }
+};
+const erf = x => { const s = x < 0 ? -1 : 1; x = Math.abs(x); const t = 1 / (1 + .3275911 * x); return s * (1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - .284496736) * t + .254829592) * t * Math.exp(-x * x)); };
+const Phi = z => .5 * (1 + erf(z / Math.SQRT2));
+function pOver(mu, sd, line, count){
+  mu = Math.max(mu, .05); const k = Math.floor(line) + 1;
+  if (count){ let p = Math.exp(-mu), c = p; for (let i = 1; i < k; i++){ p *= mu / i; c += p; } return Math.min(1, Math.max(0, 1 - c)); }
+  return Math.min(1, Math.max(0, 1 - Phi((k - .5 - mu) / Math.max(sd, .5))));
+}
+
+/* ---- data ---- */
+const FILES = ["props","games","h2h","dvp","injuries","slate","nfl_teams","nfl_dvp","nfl_slate","status"];
+const D = {}, ST = {nba:{day:"",side:"all",stat:"all",min:2,shown:12}, nfl:{day:"",side:"all",stat:"all",min:2,shown:12}};
+let NBA_LOG = {}, NFL_P = {}, RES = {nba:[], nfl:[]}, SKIP = {nba:0, nfl:0}, loadErr = null;
+const J = async n => { const r = await fetch(n + ".json?t=" + Date.now(), {cache:"no-store"}); if (!r.ok) throw new Error(n + " HTTP " + r.status); return r.json(); };
+
+function prep(){
+  NBA_LOG = {};
+  const gs = Object.values(D.games || {}).filter(g => g && g.players).sort((a, b) => String(a.date) < String(b.date) ? -1 : 1);
+  for (const g of gs) for (const p of g.players){ if (!(p.min >= 5)) continue; (NBA_LOG[norm(p.n) + "|" + p.t] ||= []).push(p); }
+  NFL_P = {};
+  for (const [t, d] of Object.entries(D.nfl_teams || {})) for (const p of Object.values((d && d.players) || {})) NFL_P[norm(p.n) + "|" + t] = p;
+}
+const outRows = (id, team) => (((D.injuries || {})[id] || {}).rows || []).filter(r => r[0] === team && /^(out|doubtful|injured reserve)/i.test(r[4] || ""));
+const statusOf = (id, team, name) => { const r = (((D.injuries || {})[id] || {}).rows || []).find(r => r[0] === team && norm(r[1]) === norm(name)); return r ? {st: r[4] || "", why: r[3] || ""} : null; };
+
+function dvpBump(lg, key, text){
+  const kws = MODEL[lg].kw[key] || []; let best = null;
+  for (const seg of String(text).split(" · ")){
+    const low = seg.toLowerCase(); if (!kws.some(k => low.includes(k))) continue;
+    const m = low.match(/(\d+)(?:st|nd|rd|th) most/); const rank = m ? +m[1] : 20;
+    const b = rank <= 5 ? .06 : rank <= 10 ? .04 : rank <= 16 ? .02 : .01;
+    if (!best || b > best.b) best = {b, seg: seg.trim()};
+  }
+  return best;
+}
+
+/* ---- the model ---- */
+function evaluate(lg, id, g, row){
+  const [team, name, key, line, ov, un, src, oLine] = row;
+  const M = MODEL[lg], S = M.stats[key]; if (!S || line == null || ov == null) return {skip:1};
+  const opp = g.away === team ? g.home : g.away;
+  const st = statusOf(id, team, name);
+  if (st && /^(out|doubtful|injured reserve)/i.test(st.st)) return {skip:1};
+  let all, h2h = [], minutes = null, wk = null;
+  if (lg === "nba"){
+    all = NBA_LOG[norm(name) + "|" + team]; if (!all) return {skip:1};
+    const hd = (D.h2h || {})[team], hk = hd && Object.keys(hd.players || {}).find(k => norm(k) === norm(name));
+    if (hk && hd.opp === opp) h2h = hd.players[hk].map(a => ({min:a[2], pts:a[3], reb:a[4], ast:a[5], tp:a[6]}));
+    minutes = all.map(p => p.min);
+  } else {
+    const p = NFL_P[norm(name) + "|" + team]; if (!p) return {skip:1};
+    all = p.logs || []; h2h = p.h2hOpp === opp ? (p.h2h || []) : [];
+    const wi = M.work[key]; if (wi != null) wk = all.map(x => x[wi]);
+  }
+  const vals = all.map(S.f), n = vals.length; if (n < 5) return {skip:1};
+  const count = M.count.has(key), over = (v, l) => v > l;
+  const mu0 = mean(vals), l5 = vals.slice(-5), n5 = l5.length;
+  const sd0 = count ? 0 : (n * sdev(vals) + 4 * M.sd(key, mu0)) / (n + 4);
+  const P = mu => pOver(mu, sd0 * Math.max(.5, mu / Math.max(mu0, .05)), line, count);
+  const io = imp(ov), iu = imp(un);
+  const pm = iu != null ? io / (io + iu) : Math.min(.97, io * .955);
+  const steps = []; let mu = mu0, p = P(mu);
+  const push = (label, detail, pNew, muNew) => { steps.push({label, detail, d: pNew - p}); p = pNew; if (muNew != null) mu = muNew; };
+  const baseP = p;
+  const o5 = l5.filter(v => over(v, line)).length, oS = vals.filter(v => over(v, line)).length;
+  /* 1. recent form */
+  if (n5 >= 3){ const m5 = mean(l5), mu1 = (1 - W_FORM) * mu0 + W_FORM * m5;
+    push("Recent form", `Last ${n5} avg ${f1(m5)} (${o5}/${n5} over ${line}) vs season ${f1(mu0)}`, P(mu1), mu1); }
+  /* 2. matchup */
+  let mdet = [], mu2 = mu;
+  if (h2h.length >= 2){ const hv = h2h.map(S.f), hm = mean(hv); mu2 = (1 - W_H2H) * mu2 + W_H2H * hm; mdet.push(`${h2h.length} games vs ${opp} last year avg ${f1(hm)}`); }
+  const dv = lg === "nba" ? ((D.dvp || {})[id] || {}).rows : ((D.nfl_dvp || {})[id] || {}).rows;
+  let dvDone = false;
+  for (const r of dv || []){
+    if (r[0] === team) continue;
+    const named = lg === "nba" ? (r[4] || []).some(x => norm(x) === norm(name)) : norm(String(r[3] || "")).split(/ +/).includes(norm(name).split(" ").pop());
+    if (!named || dvDone) continue;
+    const b = dvpBump(lg, key, r[2]);
+    if (b){ mu2 *= 1 + b.b; mdet.push(`${opp} defense: ${b.seg}`); dvDone = true; }
+  }
+  if (mdet.length) push("Matchup", mdet.join(" · "), P(mu2), mu2);
+  /* 3. minutes / workload trend */
+  const wv = lg === "nba" ? minutes : wk;
+  if (wv && wv.length >= 5){ const w5 = mean(wv.slice(-3)), wS = mean(wv);
+    if (wS > 0){ const f = Math.min(1 + WK_CAP, Math.max(1 - WK_CAP, Math.sqrt(w5 / wS)));
+      if (Math.abs(f - 1) >= .01) push(lg === "nba" ? "Minutes" : "Workload",
+        lg === "nba" ? `${f1(w5)} min last 3 vs ${f1(wS)} season` : `${f1(w5)} ${key.startsWith("rec") ? "targets" : key === "pyd" || key === "cmp" ? "attempts" : "carries"} last 3 vs ${f1(wS)} season`, P(mu * f), mu * f); } }
+  /* 4. teammates out */
+  const outs = outRows(id, team).filter(r => norm(r[1]) !== norm(name));
+  let bump = 0; const who = [];
+  for (const r of outs){
+    if (lg === "nba"){
+      const L = NBA_LOG[norm(r[1]) + "|" + team]; if (!L || L.length < 3) continue;
+      const mn = mean(L.map(p => p.min)); if (mn < 15) continue;
+      const pts = mean(L.map(p => p.pts)); bump += (/^(pts|pr|pa|pra)$/.test(key) ? .0025 : .0012) * pts; who.push(`${r[1]} (${f1(pts)} ppg)`);
+    } else {
+      const q = NFL_P[norm(r[1]) + "|" + team]; if (!q) continue; const L = q.logs || []; if (L.length < 3) continue;
+      const pos = String(r[2] || "").toUpperCase();
+      if (/^(rec|recyd)$/.test(key) && /WR|TE/.test(pos)){ const t = mean(L.map(x => x[12])); if (t >= 4){ bump += .015 * t; who.push(`${r[1]} (${f1(t)} tgt/g)`); } }
+      else if (/^(ryd|car)$/.test(key) && pos === "RB"){ const c = mean(L.map(x => x[8])); if (c >= 5){ bump += .012 * c; who.push(`${r[1]} (${f1(c)} car/g)`); } }
+    }
+  }
+  bump = Math.min(INJ_CAP, bump);
+  if (bump >= .01) push("Teammates out", `${who.join(", ")} out: +${Math.round(bump * 1000) / 10}% to the projection`, P(mu * (1 + bump)), mu * (1 + bump));
+  /* shrink toward the market when there is little data */
+  const modelP = p, s = n / (n + K_SHRINK);
+  const raw = baseP - pm;                       // season baseline vs market
+  let pf = pm + s * (modelP - pm);
+  const gap = pf - pm, cap = Math.abs(gap) > MAX_EDGE ? MAX_EDGE / Math.abs(gap) : 1;
+  pf = pm + gap * cap;
+  const rows = [{label:"Season baseline", detail:`Season avg ${f1(mu0)} over ${n} games vs line ${line}`, d: raw * s}];
+  for (const x of steps) rows.push({label:x.label, detail:x.detail, d: x.d * s});
+  if (cap < 1) for (const x of rows) x.d *= cap;
+  /* own injury status */
+  let tags = [];
+  if (st && /question|day|gtd|probable/i.test(st.st)){
+    const hit = /probable/i.test(st.st) ? 0 : QUESTIONABLE / 100;
+    tags.push(`${st.st}${st.why ? " — " + st.why : ""}`);
+    if (hit){ pf -= hit; rows.push({label:"Injury risk", detail:`${st.st}: minutes could be limited`, d: -hit}); }
+  }
+  const edgeO = pf - pm;
+  const under = edgeO < 0 && un != null;
+  const dir = under ? -1 : 1, edge = under ? -edgeO : edgeO, pSide = under ? 1 - pf : pf, pmSide = under ? 1 - pm : pm;
+  const price = under ? un : ov;
+  const ev = pSide * dec(price) - 1;
+  const conf = (n >= 12 ? 2 : n >= 7 ? 1 : 0) - (tags.length ? 1 : 0);
+  const lineMove = oLine != null && oLine !== line ? `Line moved ${oLine} → ${line}` : "";
+  return {id, lg, team, name, opp, key, label:S.l, line, side: under ? "UNDER" : "OVER", price, src, edge: edge * 100, pSide, pmSide, ev, n,
+    score: Math.max(0, Math.min(99, Math.round(50 + edge * 100 * 4))), conf: Math.max(0, conf), steps: rows.map(r => ({...r, d: r.d * dir * 100})),
+    mu0, mu, tags, lineMove, start: g.start, sd: sd0};
+}
+
+function build(){
+  prep();
+  const wkNow = (D.status || {}).nfl_week;
+  for (const lg of ["nba", "nfl"]){
+    const sl = lg === "nba" ? D.slate : D.nfl_slate, out = []; let skipped = 0;
+    for (const [id, doc] of Object.entries(D.props || {})){
+      if (!doc || doc.lg !== lg || !sl || !sl[id] || sl[id].status !== "scheduled") continue;
+      for (const row of doc.rows || []){ let r; try { r = evaluate(lg, id, sl[id], row); } catch (e) { r = {skip:1}; } if (r.skip) skipped++; else out.push({...r, asof: doc.asof, wk: sl[id].week}); }
+    }
+    RES[lg] = out; SKIP[lg] = skipped;
+    const days = daysOf(lg); if (!days.includes(ST[lg].day)) ST[lg].day = lg === "nfl" && days.includes(String(wkNow)) ? String(wkNow) : days[0] || "";
+  }
+}
+const dayKey = (lg, r) => lg === "nba" ? etDay(r.start) : String(r.wk);
+const daysOf = lg => [...new Set(RES[lg].map(r => dayKey(lg, r)))].sort();
+const dayLbl = (lg, d) => lg === "nba" ? new Date(d + "T12:00:00").toLocaleDateString("en-US", {weekday:"short", month:"short", day:"numeric"}) : "Week " + d;
+
+/* ---- UI ---- */
+const CONF = ["Low", "Medium", "High"];
+function card(r){
+  const top = [...r.steps].sort((a, b) => Math.abs(b.d) - Math.abs(a.d)).filter(x => Math.abs(x.d) >= .3).slice(0, 3);
+  const pt = d => `<span class="pe-pt ${d > .2 ? "pos" : d < -.2 ? "neg" : "zero"}">${d > 0 ? "+" : ""}${f1(d)} pts</span>`;
+  const why = x => `<li>${pt(x.d)}<span><b>${esc(x.label)}</b> — ${esc(x.detail)}</span></li>`;
+  const cls = r.side === "OVER" ? "o" : "u";
+  const projLine = `Projection ${f1(r.mu0)} season → ${f1(r.mu)} after form, matchup, workload and injuries (line ${r.line}).`;
+  return `<article class="pe-c ${cls}">
+    <div class="pe-top"><div><span class="nm">${esc(r.name)}</span><span class="tg">${esc(r.team)}</span><span class="pe-g">vs ${esc(r.opp)} · ${r.start ? etTime(r.start) : ""}</span></div>
+      <div class="pe-sc" title="Edge score: 50 = no edge, higher = bigger gap between the model and the price"><b>${r.score}</b><small>score</small></div></div>
+    <div class="pe-pick"><span class="sd">${r.side}</span><b>${r.line}</b> ${esc(r.label)}<span class="od">${ml(r.price)}</span><span class="sr">${esc(r.src || "")}</span></div>
+    <div class="pe-sum">Model <b>${Math.round(r.pSide * 100)}%</b> vs price <b>${Math.round(r.pmSide * 100)}%</b> · edge <b>${r.edge > 0 ? "+" : ""}${f1(r.edge)} pts</b> · EV <b>${r.ev >= 0 ? "+" : ""}${f1(r.ev * 100)}%</b> per $1</div>
+    <div class="pe-tags"><span class="pe-tag ${r.conf === 2 ? "hi" : ""}">${CONF[r.conf]} confidence · ${r.n} games</span>${r.tags.map(t => `<span class="pe-tag">${esc(t)}</span>`).join("")}${r.lineMove ? `<span class="pe-tag">${esc(r.lineMove)}</span>` : ""}</div>
+    <ul class="pe-why">${top.length ? top.map(why).join("") : `<li><span class="muted">No single factor stands out; the model is close to the market price.</span></li>`}</ul>
+    <details><summary>Full breakdown</summary>
+      <ul class="pe-why" style="margin-top:6px">${r.steps.map(why).join("")}</ul>
+      <p class="pe-proj">${esc(projLine)}</p>
+      <p class="pe-mk">Market: ${esc(r.side)} at ${ml(r.price)} implies ${Math.round(r.pmSide * 100)}% after removing the book's margin. Edge = model chance minus that. Contributions above are shown for the ${esc(r.side)} side and already shrunk toward the market because of the sample size (${r.n} games).</p>
+    </details></article>`;
+}
+function view(lg){
+  const el = $("pe-" + lg); if (!el) return;
+  const s = ST[lg], days = daysOf(lg);
+  const all = RES[lg].filter(r => dayKey(lg, r) === s.day);
+  const stats = [...new Set(all.map(r => r.key))];
+  let list = all.filter(r => r.edge >= s.min && (s.side === "all" || r.side === s.side) && (s.stat === "all" || r.key === s.stat)).sort((a, b) => b.score - a.score || b.n - a.n);
+  const asofs = all.map(r => Date.parse(r.asof)).filter(Boolean), asof = asofs.length ? new Date(Math.min(...asofs)).toLocaleString("en-US", {timeZone:"America/New_York", month:"short", day:"numeric", hour:"numeric", minute:"2-digit"}) + " ET" : "";
+  const bar = `<div class="pe-bar">
+    <select id="pe-d-${lg}" aria-label="${lg === "nba" ? "Day" : "Week"}">${days.map(d => `<option value="${esc(d)}" ${d === s.day ? "selected" : ""}>${esc(dayLbl(lg, d))}</option>`).join("")}</select>
+    <div class="seg" role="group" aria-label="Side">${["all","OVER","UNDER"].map(v => `<button type="button" data-pe="${lg}|side|${v}" aria-pressed="${s.side === v}">${v === "all" ? "Both sides" : v[0] + v.slice(1).toLowerCase() + "s"}</button>`).join("")}</div>
+    <select id="pe-s-${lg}" aria-label="Stat"><option value="all">All stats</option>${stats.map(k => `<option value="${k}" ${k === s.stat ? "selected" : ""}>${esc(MODEL[lg].stats[k].l)}</option>`).join("")}</select>
+    <select id="pe-m-${lg}" aria-label="Minimum edge">${[[0,"Any edge"],[2,"Edge 2+ pts"],[5,"Edge 5+ pts"],[8,"Edge 8+ pts"]].map(([v, t]) => `<option value="${v}" ${v === s.min ? "selected" : ""}>${t}</option>`).join("")}</select></div>`;
+  let body;
+  if (loadErr && !RES[lg].length) body = `<div class="pb-err"><p>Couldn't load the data this needs (${esc(loadErr)}).</p><button type="button" data-pe="${lg}|retry|1">Try again</button></div>`;
+  else if (!RES[lg].length) body = `<p class="muted">No upcoming ${lg.toUpperCase()} props with enough history right now. This fills in once lines are posted for the next games.</p>`;
+  else if (!list.length) body = `<p class="muted">No props clear that filter. Try “Any edge”.</p>`;
+  else body = `<div class="pe-list">${list.slice(0, s.shown).map(card).join("")}</div>${list.length > s.shown ? `<button type="button" class="pe-more" data-pe="${lg}|more|1">Show more (${list.length - s.shown} left)</button>` : ""}`;
+  el.innerHTML = `<h2 id="pe-h-${lg}">Prop Edge Finder <small>Every upcoming posted prop scored against its price. The score comes from a stated projection, never a “lock” label — open any card to see each reason and its size</small></h2>
+    <details class="pe-how"><summary>How the score works</summary><ol>
+      <li><b>Start from the market.</b> The over/under prices give a chance with the book's margin removed.</li>
+      <li><b>Project the stat.</b> Season average, then ${Math.round(W_FORM * 100)}% weight on the last 5 games, ${Math.round(W_H2H * 100)}% on last year's games against this opponent (2+ games), and a bump if the defense-vs-position sheet names him for that stat (+1% to +6%).</li>
+      <li><b>Adjust for role.</b> Minutes or touches trend over the last 3 games (capped ±${WK_CAP * 100}%), and teammates listed out who normally carry scoring or targets (capped +${INJ_CAP * 100}%).</li>
+      <li><b>Turn it into a chance.</b> Counting stats use a Poisson curve; points and yards use a normal curve spread from his own game-to-game swings.</li>
+      <li><b>Trust it in proportion to the data.</b> With n games, the model's gap from the market is multiplied by n ÷ (n + ${K_SHRINK}). Early in the season this keeps scores close to the market.</li>
+      <li><b>Questionable players</b> lose ${QUESTIONABLE} points on the Over. Out and Doubtful players are skipped.</li>
+      <li><b>Score</b> = 50 + 4 × edge (model chance minus price, in points), capped 0–99. It is a ranking aid, not a guarantee; small samples and missing context can make it wrong.</li></ol></details>
+    ${bar}${body}
+    <p class="pe-foot">${asof ? `Lines as of ${esc(asof)}. ` : ""}Form data: this season's box scores.${SKIP[lg] ? ` ${SKIP[lg]} props skipped (player out, or fewer than 5 games of history).` : ""}${loadErr ? ` Some feeds failed: ${esc(loadErr)}.` : ""}</p>`;
+}
+const renderAll = () => { view("nba"); view("nfl"); };
+function mount(lg){
+  if ($("pe-" + lg)) return;
+  const a = $(lg === "nba" ? "x-mkt-h" : "xn-mkt-h"), sec = a && a.closest("section"); if (!sec) return;
+  const el = document.createElement("section"); el.className = "x-sec"; el.id = "pe-" + lg; el.setAttribute("aria-labelledby", "pe-h-" + lg);
+  el.innerHTML = `<h2 id="pe-h-${lg}">Prop Edge Finder</h2><p class="muted">Scoring props…</p>`;
+  sec.parentNode.insertBefore(el, sec);
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-pe]"); if (!b) return;
+  const [lg, k, v] = b.dataset.pe.split("|"), s = ST[lg];
+  if (k === "side") { s.side = v; s.shown = 12; } else if (k === "more") s.shown += 12; else if (k === "retry"){ load(); return; }
+  view(lg);
+});
+document.addEventListener("change", e => {
+  const m = /^pe-([dsm])-(nba|nfl)$/.exec(e.target.id || ""); if (!m) return;
+  const s = ST[m[2]]; if (m[1] === "d") s.day = e.target.value; else if (m[1] === "s") s.stat = e.target.value; else s.min = +e.target.value;
+  s.shown = 12; view(m[2]);
+});
+async function load(){
+  const res = await Promise.allSettled(FILES.map(J));
+  FILES.forEach((f, i) => { if (res[i].status === "fulfilled") D[f] = res[i].value; });
+  const bad = FILES.filter((f, i) => res[i].status !== "fulfilled"); loadErr = bad.length ? bad.join(", ") : null;
+  try { build(); } catch (e) { console.error(e); loadErr = "model error"; }
+  renderAll();
+}
+mount("nba"); mount("nfl"); load(); setInterval(load, 180000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+window.PEdge = {evaluate, build, RES};
+})();
+</script>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap">
+<style>
+/* ---------- Neon theme: black base, lime / orange / red tints, big rounded cards ---------- */
+:root:root:root{
+  --bg:#050604;--panel:#12130f;--panel2:#181a14;--ink:#f5f6ef;--muted:#9a9e8e;--line:#272a21;
+  --court:#c6f20c;--court-soft:rgba(198,242,12,.13);
+  --hit:#c6f20c;--hit-soft:rgba(198,242,12,.14);--miss:#ff4d3d;--miss-soft:rgba(255,77,61,.16);--warn:#ffa31a;--warn-soft:rgba(255,163,26,.16);
+  --violet:#7a6bff;--bday:#b996ff;--bday-soft:rgba(185,150,255,.16);
+  --display:"Plus Jakarta Sans","Big Shoulders Display",system-ui,sans-serif;--body:"Plus Jakarta Sans","IBM Plex Sans",system-ui,sans-serif;color-scheme:dark}
+body{background:radial-gradient(900px 520px at 6% -6%,rgba(198,242,12,.17),transparent 62%),radial-gradient(760px 520px at 104% 4%,rgba(255,163,26,.12),transparent 60%),radial-gradient(700px 500px at 50% 110%,rgba(122,107,255,.09),transparent 60%),var(--bg);background-attachment:fixed;font-weight:500}
+.wrap{gap:20px}
+header{border-bottom:1px solid var(--line);padding-bottom:14px}
+h1{font-family:var(--display);font-weight:800;text-transform:none;letter-spacing:-.03em;line-height:1;font-size:clamp(34px,7vw,56px)}
+h1 span{background:linear-gradient(90deg,#c6f20c,#ffa31a);-webkit-background-clip:text;background-clip:text;color:transparent}
+h2{font-family:var(--display);font-weight:800;text-transform:none;letter-spacing:-.02em;font-size:23px}
+h2 small{font-weight:500;color:var(--muted)}
+.stamp{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:8px 14px;text-align:right}
+/* tabs + segmented controls become pills */
+.tabs{gap:8px}
+.tabs button{font:800 15px var(--display);letter-spacing:.02em;text-transform:none;padding:10px 24px;border-radius:999px;background:var(--panel);border:1px solid var(--line);color:var(--muted);transition:.15s}
+.tabs button[aria-selected="true"]{background:var(--court);color:#0b0d02;border-color:var(--court);box-shadow:0 0 26px rgba(198,242,12,.35)}
+.seg{border:1px solid var(--line);border-radius:999px;padding:3px;gap:2px;background:var(--panel)}
+.seg button{border-radius:999px;padding:7px 14px;font:700 12.5px var(--body);color:var(--muted)}
+.seg button+button{border-left:0}
+.seg button[aria-pressed="true"],.pe-bar .seg button[aria-pressed="true"]{background:var(--court);color:#0b0d02;box-shadow:0 0 16px rgba(198,242,12,.25)}
+select,input{background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:8px 14px}
+/* section panels */
+.tabp > section,.x-sec{background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.012));border:1px solid var(--line);border-radius:26px;padding:20px;box-shadow:0 18px 50px -28px rgba(0,0,0,.9)}
+.tw,.lv-tw{background:var(--panel);border:1px solid var(--line);border-radius:20px}
+th{background:var(--panel2);color:var(--muted)}
+tr.pl:hover td{background:rgba(198,242,12,.06)}
+tr.pl[aria-expanded="true"] td{background:rgba(198,242,12,.11)}
+/* cards */
+.lk,.x-mc,.x-ic,.x-pc,.pe-c,.dv,.gm,.lv-g,.lv-n,.lv-u,.box,.lv-box,.lv-bx,.x-key,.pe-how{border-radius:22px;border:1px solid var(--line);background:linear-gradient(160deg,var(--panel2),var(--panel))}
+.lk{position:relative;overflow:hidden;padding:15px 16px;gap:6px;transition:transform .15s,border-color .15s}
+.lk:hover{transform:translateY(-2px);border-color:var(--court)}
+.lk::after{content:"";position:absolute;left:16px;right:34%;bottom:0;height:3px;border-radius:3px 3px 0 0;background:var(--court)}
+.lk:nth-child(4n+1){background:linear-gradient(160deg,rgba(198,242,12,.24),rgba(198,242,12,.05) 58%,var(--panel));border-color:rgba(198,242,12,.35)}
+.lk:nth-child(4n+2){background:linear-gradient(160deg,rgba(255,163,26,.24),rgba(255,163,26,.05) 58%,var(--panel));border-color:rgba(255,163,26,.35)}
+.lk:nth-child(4n+2)::after{background:var(--warn)}.lk:nth-child(4n+2) .pick{color:var(--warn)}
+.lk:nth-child(4n+3){background:linear-gradient(160deg,rgba(255,77,61,.24),rgba(255,77,61,.05) 58%,var(--panel));border-color:rgba(255,77,61,.35)}
+.lk:nth-child(4n+3)::after{background:var(--miss)}.lk:nth-child(4n+3) .pick{color:#ff8a7d}
+.lk:nth-child(4n){background:linear-gradient(160deg,rgba(122,107,255,.26),rgba(122,107,255,.05) 58%,var(--panel));border-color:rgba(122,107,255,.4)}
+.lk:nth-child(4n)::after{background:var(--violet)}.lk:nth-child(4n) .pick{color:#a99eff}
+.lk .pick{font-family:var(--display);font-weight:800;font-size:27px;letter-spacing:-.02em;text-transform:none}
+.lk .who{font-weight:700}
+.x-pc.o,.pe-c.o{border-left:1px solid var(--line);box-shadow:inset 4px 0 0 var(--hit)}
+.x-pc.u,.pe-c.u{border-left:1px solid var(--line);box-shadow:inset 4px 0 0 var(--miss)}
+.pe-sc{border-radius:16px;box-shadow:0 0 22px -6px currentColor}
+.pe-c.o .pe-sc{color:var(--hit);background:var(--hit-soft)}.pe-c.u .pe-sc{color:var(--miss);background:var(--miss-soft)}
+.pe-sc b{color:var(--ink);font-size:24px}
+/* chips and tags */
+.x-tag,.st,.dvpb,.pe-tag,.bday::after,.x-flag{border-radius:999px;padding:2px 9px}
+.dnav button,.wk-nav button,.lv-bar button{border-radius:999px;background:var(--panel2);border:1px solid var(--line);color:var(--ink)}
+.dnav button:hover,.wk-nav button:hover{border-color:var(--court);color:var(--court)}
+/* ticker */
+.tk{background:var(--panel);border-bottom:1px solid var(--line);backdrop-filter:blur(10px)}
+.tk-lbl{background:var(--court);color:#0b0d02;border-radius:0 999px 999px 0;font-family:var(--display)}
+/* data bar */
+#pb-fresh{background:var(--panel);border-bottom:1px solid var(--line)}
+#pb-fresh .pf-dot{box-shadow:0 0 10px currentColor}
+button:focus-visible,select:focus-visible,input:focus-visible,tr:focus-visible{outline:2px solid var(--court);outline-offset:2px}
+.nm{font-weight:700}
+.best,.num{font-variant-numeric:tabular-nums}
+@media (max-width:640px){
+  .tabp > section,.x-sec{padding:14px;border-radius:20px}
+  .lk,.x-mc,.x-ic,.x-pc,.pe-c,.dv,.gm,.lv-g{border-radius:18px}
+  h2{font-size:20px}
+}
+</style>
+
 </body></html>
