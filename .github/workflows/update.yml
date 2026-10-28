@@ -7,7 +7,6 @@ on:
   workflow_dispatch: {}
   push:
     branches: [main]
-    paths-ignore: ["data/**"]
 
 permissions:
   contents: write
@@ -25,17 +24,22 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
     steps:
       - uses: actions/checkout@v4
 
-      - name: Pull fresh data
-        run: python3 update.py
+      - name: Pull fresh NBA data
+        run: python3 update.py || echo "NBA update hit an error; keeping the last good data"
+
+      - name: Pull fresh NFL data
+        run: python3 nfl_update.py || echo "NFL update hit an error; keeping the last good data"
 
       - name: Save data to the repo
         run: |
           git config user.name "prop-board-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data
+          git add -A
           if git diff --cached --quiet; then
             echo "No changes"
           else
