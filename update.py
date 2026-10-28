@@ -385,6 +385,37 @@ def step_props(props, tonight):
     return total
 
 
+def step_backfill(props, slate):
+    """Fill in posted props for finished games that never got any (an outage, or the game started before the
+    first pull), using Action Network's final lines, so past days keep their cashed/missed history."""
+    import anprops
+    need = {}
+    for gid, g in slate.items():
+        if g.get("status") == "final" and gid not in props and re.match(r"\d{4}-\d{2}-\d{2}-", gid):
+            need.setdefault(gid[:10], []).append(gid)
+    added = 0
+    for day in sorted(need, reverse=True)[:8]:
+        try:
+            by_game, _used = anprops.pull("nba", {"date": day.replace("-", "")}, get, include_done=True)
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"Props backfill {day} failed: {type(e).__name__} {str(e)[:80]}")
+            continue
+        for gid in need[day]:
+            parts = gid.split("-")
+            rows = []
+            for r in (by_game.get((parts[3], parts[4])) or {}).values():
+                r = list(r)
+                if r[7] is None:
+                    r[7:10] = [r[3], r[4], r[5]]
+                rows.append(r)
+            if rows:
+                rows.sort(key=lambda r: (STAT_ORDER.index(r[2]) if r[2] in STAT_ORDER else 9, r[0], r[1]))
+                props[gid] = {"asof": NOWISO, "lg": "nba", "rows": rows}
+                added += 1
+    if added:
+        notes.append(f"Backfilled final prop lines for {added} past games")
+
+
 def roster(team):
     d = soft(SB + "teams/" + ESPN_ABBR.get(team, team.lower()) + "/roster", f"Roster {team}")
     if not d:
@@ -542,6 +573,10 @@ def main():
     except Exception as e:  # noqa: BLE001
         errors.append(f"Upcoming schedule failed: {type(e).__name__} {str(e)[:80]}")
     nprops = step_props(props, tonight) if tonight else 0
+    try:
+        step_backfill(props, slate)
+    except Exception as e:  # noqa: BLE001
+        errors.append(f"Props backfill failed: {type(e).__name__} {str(e)[:80]}")
     positions = step_positions({}) if tonight else {}
     nh = 0
     if tonight and positions:
@@ -553,8 +588,8 @@ def main():
             step_dvp(dvp, tonight, games, positions)
         except Exception as e:  # noqa: BLE001
             errors.append(f"Defense vs position failed: {e}")
-    # keep the daily files small: move NBA days older than a week into monthly archive files
-    cutoff = (dt.date.fromisoformat(TODAY) - dt.timedelta(days=7)).isoformat()
+    # keep the daily files small: move NBA days older than 30 days into monthly archive files
+    cutoff = (dt.date.fromisoformat(TODAY) - dt.timedelta(days=30)).isoformat()
     os.makedirs(os.path.join(DATA, "archive"), exist_ok=True)
     for col, d in (("market", market), ("injuries", injuries), ("props", props), ("dvp", dvp)):
         old = [k for k in d if re.match(r"\d{4}-\d{2}-\d{2}-", k) and k[:10] < cutoff]
