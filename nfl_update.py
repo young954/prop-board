@@ -461,7 +461,46 @@ def main():
     # 5. defense vs position for this week's games
     for gid in week_ids:
         dvp[gid] = {"src": "computed", "rows": dvp_rows(teams, gid, inj_status)}
+    try:
+        backfill_props(S)
+    except Exception as e:  # noqa: BLE001
+        errors.append(f"NFL props backfill failed: {type(e).__name__} {str(e)[:80]}")
     finish(teams, slate, market, injuries, props, dvp, S, nprops)
+
+
+def backfill_props(S):
+    """Fill the archive with final lines for past weeks that never got posted props (see anprops include_done)."""
+    import anprops
+    arch = load("archive/props-nfl-2026")
+    have = {}
+    for k in arch:
+        m = re.match(r"w(\d+)-", k)
+        if m:
+            have[int(m.group(1))] = have.get(int(m.group(1)), 0) + 1
+    changed = 0
+    for w in [w for w in range(S - 1, 0, -1) if have.get(w, 0) < 6][:3]:
+        try:
+            by_game, _used = anprops.pull("nfl", {"week": w}, get, include_done=True)
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"NFL props backfill week {w} failed: {type(e).__name__} {str(e)[:80]}")
+            continue
+        for (a, h), d in by_game.items():
+            gid = f"w{w:02d}-{a}-{h}"
+            if gid in arch:
+                continue
+            rows = []
+            for r in d.values():
+                r = list(r)
+                if r[7] is None:
+                    r[7:10] = [r[3], r[4], r[5]]
+                rows.append(r)
+            if rows:
+                rows.sort(key=lambda r: (STAT_ORDER.index(r[2]) if r[2] in STAT_ORDER else 9, r[0], r[1]))
+                arch[gid] = {"asof": NOWISO, "lg": "nfl", "rows": rows}
+                changed += 1
+    if changed:
+        save("archive/props-nfl-2026", arch)
+        notes.append(f"NFL: backfilled final prop lines for {changed} past games")
 
 
 def finish(teams, slate, market, injuries, props, dvp, S, nprops=0):
