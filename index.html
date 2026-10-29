@@ -1491,7 +1491,7 @@ function statusTxt(g){
 }
 /* box score parsing → per-player stat lookup for the live prop tracker */
 function parseBox(lg, j){
-  const teams = (j.boxscore?.players||[]).map(t => ({ab:TEAM(lg, t.team?.abbreviation), cats:(t.statistics||[]).map(c => ({name:c.name||c.text||"", labels:c.labels||[], rows:(c.athletes||[]).map(a => ({n:a.athlete?.displayName||"", st:a.stats||[], dnp:a.didNotPlay, starter:a.starter}))}))}));
+  const teams = (j.boxscore?.players||[]).map(t => ({ab:TEAM(lg, t.team?.abbreviation), cats:(t.statistics||[]).map(c => ({name:c.name||c.text||"", labels:c.labels||[], rows:(c.athletes||[]).map(a => ({n:a.athlete?.displayName||"", st:a.stats||[], dnp:a.didNotPlay, starter:a.starter, id:a.athlete?.id}))}))}));
   return {teams, status:j.header?.competitions?.[0]?.status?.type?.detail || "", news:(j.news?.articles||[]).slice(0,3)};
 }
 function liveVal(lg, box, team, name, key){
@@ -1825,15 +1825,91 @@ async function loadMs(lg, g){
     const disp = {}; for (const t of box.teams) for (const cc of t.cats) for (const r of cc.rows) disp[norm(r.n)] = r.n;
     const hs = lg === "nba" ? hotStreaks(j) : hotStreaksNfl(j), hot = [];
     for (const [n, f] of Object.entries(hs)) for (const v of Object.values(f)) hot.push({n:disp[n] || n, t:v.t});
-    Object.assign(x, {at:Date.now(), done:!!g.done, ms:milestonesOf(lg, box), hot, busy:false});
+    Object.assign(x, {at:Date.now(), done:!!g.done, hot}); x.ms = await careerMs(lg, g, box).catch(() => x.ms || []); x.cdone = true; x.busy = false;
     return true;
   } catch { x.busy = false; x.at = Date.now(); return false; }
 }
+/* ---------- Career milestones ----------
+   A milestone is a player's career total passing a round number during a game
+   (e.g. his 2,000th career point). Career totals come from ESPN's player stats (regular season,
+   counted through his last finished game); tonight's box score is added on top. */
+const CAREER_SPEC = {
+  nba: [["pts","points","point",1000,20,["offensive.points"]],["reb","rebounds","rebound",500,10,["general.rebounds"]],["ast","assists","assist",500,10,["offensive.assists"]],["stl","steals","steal",100,5,["defensive.steals"]],["blk","blocks","block",100,5,["defensive.blocks"]],["tp","3-pointers","3-pointer",100,5,["offensive.threePointFieldGoalsMade"]]],
+  nfl: [["ryd","rushing yards","rushing yard",1000,100,["rushing.rushingYards"]],["recyd","receiving yards","receiving yard",1000,100,["receiving.receivingYards"]],["rec","catches","catch",100,5,["receiving.receptions"]],["td","touchdowns","touchdown",10,2,["rushing.rushingTouchdowns","receiving.receivingTouchdowns"]]]
+};
+const CAREER_URL = {nba:"https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/athletes/", nfl:"https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/athletes/"};
+const LOG_URL = {nba:"https://site.web.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/", nfl:"https://site.web.api.espn.com/apis/common/v3/sports/football/nfl/athletes/"};
+const CAREER = {}, LOGS = {};
+async function careerOf(lg, id, fresh){
+  const k = lg + id, c = CAREER[k];
+  if (c && !fresh && Date.now() - c.at < 20 * 60000) return c.v;
+  try {
+    const r = await fetch(`${CAREER_URL[lg]}${id}/statistics/0?lang=en&region=us`);
+    if (!r.ok) return c ? c.v : null;
+    const j = await r.json(), v = {};
+    for (const cat of j.splits?.categories || []) for (const s of cat.stats || []) v[cat.name + "." + s.name] = s.value;
+    CAREER[k] = {at:Date.now(), v}; return v;
+  } catch { return c ? c.v : null; }
+}
+async function logHas(lg, id, gid){
+  const k = lg + id + gid; if (k in LOGS) return LOGS[k];
+  try { const r = await fetch(`${LOG_URL[lg]}${id}/gamelog`); if (!r.ok) return null; const j = await r.json(); return (LOGS[k] = !!(j.events && j.events[gid])); }
+  catch { return null; }
+}
+async function pool(items, n, fn){ let i = 0; await Promise.all(Array.from({length:Math.min(n, items.length)}, async () => { while (i < items.length){ const x = items[i++]; try { await fn(x); } catch {} } })); }
+const fmtN = n => Number(n).toLocaleString("en-US");
+function boxTotals(lg, box){
+  const P = {};
+  for (const t of box.teams) for (const c of t.cats) for (const r of c.rows){
+    if (r.dnp || !r.st.length || !r.id) continue;
+    const p = (P[t.ab + "|" + r.id] ||= {n:r.n, t:t.ab, id:r.id, v:{}, min:0});
+    if (lg === "nba"){ for (const [k, l] of [["pts","PTS"],["reb","REB"],["ast","AST"],["stl","STL"],["blk","BLK"],["tp","3PT"]]) p.v[k] = statNum(c.labels, r.st, l); p.min = statNum(c.labels, r.st, "MIN"); }
+    else if (/rushing/i.test(c.name)){ p.v.ryd = statNum(c.labels, r.st, "YDS"); p.v.td = (p.v.td || 0) + statNum(c.labels, r.st, "TD"); }
+    else if (/receiving/i.test(c.name)){ p.v.recyd = statNum(c.labels, r.st, "YDS"); p.v.rec = statNum(c.labels, r.st, "REC"); p.v.td = (p.v.td || 0) + statNum(c.labels, r.st, "TD"); }
+  }
+  return Object.values(P);
+}
+async function careerMs(lg, g, box){
+  const spec = CAREER_SPEC[lg], all = boxTotals(lg, box), byTeam = {};
+  for (const p of all) (byTeam[p.t] ||= []).push(p);
+  const cand = [];
+  for (const t of Object.values(byTeam)) cand.push(...t.sort((a, b) => b.min - a.min).slice(0, lg === "nba" ? 9 : 16));
+  await pool(cand, 6, p => careerOf(lg, p.id).then(v => { p.car = v; }));
+  const out = [];
+  for (const p of cand){
+    if (!p.car) continue;
+    for (const [k, plural, one, step, near, paths] of spec){
+      const tonight = p.v[k] || 0; if (!tonight) continue;
+      let career = 0, ok = true; for (const path of paths){ if (p.car[path] == null) ok = false; career += p.car[path] || 0; }
+      if (!ok) continue;
+      let before = career, after = career + tonight;
+      const hit = Math.floor(after / step) > Math.floor(before / step), nextT = (Math.floor(after / step) + 1) * step;
+      if (!hit && nextT - after > near) continue;
+      if (g.done){
+        const inc = await logHas(lg, p.id, g.id);
+        if (inc){ const f = await careerOf(lg, p.id, true); career = 0; for (const path of paths) career += (f && f[path]) || 0; before = career - tonight; after = career; }
+      }
+      const crossed = Math.floor(after / step) > Math.floor(before / step);
+      const T = crossed ? Math.floor(after / step) * step : (Math.floor(after / step) + 1) * step;
+      if (!crossed && T - after > near) continue;
+      out.push({n:p.n, t:p.t, k, l:plural, one, crossed, T, tonight, after, need:T - after, tier:crossed ? 1 : 0, top:crossed,
+        txt:crossed ? `${p.n} reached ${fmtN(T)} career ${plural}` : `${p.n} is ${fmtN(T - after)} ${T - after === 1 ? one : plural} from ${fmtN(T)} career`});
+    }
+  }
+  return out;
+}
 function msBlock(lg, g){
-  const c = MS[lg + g.id]; if (!c || !c.ms.length) return "";
-  const xs = [...c.ms].sort((a, b) => b.tier - a.tier || b.v - a.v).slice(0, 40);
-  const sub = lg === "nba" ? "points, rebounds, assists, steals, blocks, 3-pointers" : "rush yards, receiving yards, receptions, touchdowns";
-  return `<div class="lv-team"><h4>Milestones <small>${sub}</small></h4><div class="lv-chips">${xs.map(m => `<span class="lv-chip${m.top ? " top" : ""}">${esc(m.n)} <b>${m.v}</b> ${esc(m.l)} <small>${esc(m.t)}</small></span>`).join("")}</div></div>`;
+  const c = MS[lg + g.id]; if (!c || !c.cdone) return "";
+  const nmT = t => (t === g.away ? g.awayName : t === g.home ? g.homeName : "") || (typeof NFLN !== "undefined" && NFLN[t]) || t;
+  const xs = [...c.ms].sort((a, b) => (b.crossed - a.crossed) || a.need - b.need).slice(0, 30);
+  const sub = "A milestone is when a player passes a big round number in his career, like his 2,000th career point. This shows who passed one in this game and who is close. Career totals are regular season and can be a game behind.";
+  const body = xs.length ? xs.map(m => {
+    const w = m.after === 1 ? m.one : m.l;
+    return `<div class="ms-p${m.crossed ? " top" : ""}"><div class="ms-n">${esc(m.n)} <small>${esc(nmT(m.t))}</small></div>
+      <div class="ms-s"><span class="ms-a${m.crossed ? " top" : ""}">${m.crossed ? `Just reached <b>${fmtN(m.T)}</b> career ${esc(m.l)}` : `<b>${fmtN(m.need)}</b> ${esc(m.need === 1 ? m.one : m.l)} away from <b>${fmtN(m.T)}</b> career ${esc(m.l)}`}</span></div>
+      <div class="ms-sub">${m.tonight} ${esc(m.tonight === 1 ? m.one : m.l)} in this game · ${fmtN(m.after)} career</div></div>`;
+  }).join("") : `<p class="muted">No one has reached or come close to a career milestone in this game.</p>`;
+  return `<div class="lv-team"><h4>Career milestones <small>${sub}</small></h4><div class="ms-list">${body}</div></div>`;
 }
 function tkItems(){
   const out = [], now = Date.now();
@@ -1842,7 +1918,7 @@ function tkItems(){
     for (const g of s.games){
       const c = MS[lg + g.id]; if (!c) continue; const live = g.state === "in", st = live ? "LIVE" : "FINAL";
       for (const h of c.hot) out.push({w:live ? 0 : 3, cls:"rb", lg:LG, tag:"HOT", txt:`${h.n} · ${h.t}`, sub:`${lab(g)} · ${st}`});
-      for (const m of c.ms) out.push({w:(live ? 1 : 4) + (m.top ? -0.5 : 0.5) - m.tier / 20, cls:m.top ? "top" : "", lg:LG, tag:m.top ? "MILESTONE" : "", txt:`${m.n} ${m.v} ${m.l}`, sub:`${lab(g)} · ${st}`});
+      for (const m of c.ms) out.push({w:(live ? 1 : 4) + (m.top ? -0.5 : 0.5) - m.tier / 20, cls:m.top ? "top" : "", lg:LG, tag:m.crossed ? "MILESTONE" : "CLOSE", txt:m.txt, sub:`${lab(g)} · ${st}`});
     }
     for (const it of RES[lg].items){
       if (!it.rows) continue; const f = gameFrac(lg, it.g), done = !!it.done;
@@ -2504,4 +2580,14 @@ button:focus-visible,select:focus-visible,input:focus-visible,tr:focus-visible{o
 (function(){var tk=document.getElementById("tk");if(!tk)return;function set(){try{document.documentElement.style.setProperty("--tk-h",Math.round(tk.getBoundingClientRect().height)+"px")}catch(e){}}
 set();addEventListener("resize",set);addEventListener("load",set);if(window.ResizeObserver)new ResizeObserver(set).observe(tk);})();
 </script>
+<style>
+.ms-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
+.ms-p{border:1px solid var(--line);border-radius:14px;background:var(--panel2);padding:9px 12px;display:flex;flex-direction:column;gap:4px}
+.ms-p.top{border-color:var(--warn)}
+.ms-n{font:700 13.5px var(--body);color:var(--ink)}.ms-n small{font:500 11.5px var(--body);color:var(--muted);margin-left:4px}
+.ms-s{display:flex;flex-wrap:wrap;gap:4px 10px;font:500 12.5px var(--body);color:var(--muted)}
+.ms-a b{font-family:var(--mono);color:var(--court);font-size:14px}.ms-a.top b{color:var(--warn)}
+.lv-team h4 small{display:block;margin:3px 0 8px;font:500 12px/1.4 var(--body);color:var(--muted);text-transform:none;letter-spacing:0}
+</style>
+<style>.ms-sub{font:500 11.5px var(--body);color:var(--muted)}.ms-a.top{color:var(--ink);font-weight:600}</style>
 </body></html>
