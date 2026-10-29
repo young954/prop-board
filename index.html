@@ -214,6 +214,11 @@ footer a{color:var(--court)}
     <div class="stamp" id="stamp">2026–27 NBA regular season<br>Loading games…</div>
   </header>
 
+  <section aria-labelledby="lh" style="display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:16px">
+    <h2 id="lh">Most appealing props <small><b id="lkday"></b> · active players only, 20+ min a night, cleared in every one of their last 5 games against tonight's opponent</small></h2>
+    <div class="locks" id="locks"></div>
+  </section>
+
   <section class="lv-sec gp-sec" id="gp-nba" data-today="1" aria-labelledby="lv-nba-h"><h2 id="lv-nba-h">Games &amp; props <small>Tonight's games with score, moneyline, total and your posted props inside each one. Tap a game for each prop’s chance to cash and the box score. Use the arrows for other days. Rainbow = hot streak: 6 pts in a quarter, 2 threes in a row within 2:00, 3 assists in a quarter with no turnover, or 5 rebounds in a quarter</small></h2>
     <div class="slate-h"><div class="dnav"><button id="dp" aria-label="Previous day">‹</button><span class="dl" id="dl">—</span><button id="dn" aria-label="Next day">›</button></div><div class="sum" id="sum"></div></div>
     <div class="lv-sec gp-live" id="lv-nba"></div>
@@ -225,10 +230,6 @@ footer a{color:var(--court)}
 
   <section class="x-sec" aria-labelledby="x-props-h"><h2 id="x-props-h">Book lines vs history <small>Real posted prop lines for the day picked in the slate, checked against every game this season and last season's meetings with tonight's opponent. Green edge: cleared more often than the price implies. Open = the first DraftKings line the board captured that day, next to where it sits now</small></h2><div class="seg" id="x-pf" role="group" aria-label="Filter posted lines"></div><div class="x-grid" id="x-props"><p class="muted">Loading…</p></div></section>
 
-  <section aria-labelledby="lh" style="display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:16px">
-    <h2 id="lh">Most appealing props <small><b id="lkday"></b> · active players only, 20+ min a night, cleared in every one of their last 5 games against tonight's opponent</small></h2>
-    <div class="locks" id="locks"></div>
-  </section>
 
   <section aria-labelledby="dh" style="display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:16px">
     <h2 id="dh">Defense vs position <small>For the day picked in the slate: where each defense ranked in 2025-26 in what it allows to guards, forwards and centers (top 10 shown, ties share a rank), and the players it sets up</small></h2>
@@ -270,6 +271,11 @@ footer a{color:var(--court)}
     <div class="stamp" id="n-stamp">2026 NFL regular season<br>Loading…</div>
   </header>
 
+  <section aria-labelledby="n-lh" style="display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:16px">
+    <h2 id="n-lh">Most appealing props <small>This week's players not on the injury report as Out or Doubtful, cleared in every one of their last 5 games · <span class="dvpb">DvP</span> = named on the defense-vs-position sheet</small></h2>
+    <div class="locks" id="n-locks"></div>
+  </section>
+
   <section class="lv-sec gp-sec" id="gp-nfl" data-today="1" aria-labelledby="lv-nfl-h"><h2 id="lv-nfl-h">Games &amp; props <small>This week's games with score, moneyline, total and your posted props inside each one. Tap a game for each prop’s chance to cash and the box score. Rainbow = hot streak: 20+ rushing or receiving yards in a quarter or on one play, a touchdown, 3 catches in a quarter, or a QB with 50+ passing yards in a quarter</small></h2>
     <div class="sum" id="n-sum"></div>
     <div class="lv-sec gp-live" id="lv-nfl"></div>
@@ -281,10 +287,6 @@ footer a{color:var(--court)}
 
   <section class="x-sec" aria-labelledby="xn-props-h"><h2 id="xn-props-h">Book lines vs history <small>This week's posted DraftKings props checked against each player's last 5, full season and last year's games vs this opponent. Open = the first line the board captured</small></h2><div class="seg" id="xn-pf" role="group" aria-label="Filter posted lines"></div><div class="x-grid" id="xn-props"><p class="muted">Loading…</p></div></section>
 
-  <section aria-labelledby="n-lh" style="display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:16px">
-    <h2 id="n-lh">Most appealing props <small>This week's players not on the injury report as Out or Doubtful, cleared in every one of their last 5 games · <span class="dvpb">DvP</span> = named on the defense-vs-position sheet</small></h2>
-    <div class="locks" id="n-locks"></div>
-  </section>
 
   <section aria-labelledby="n-dh" style="display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:16px">
     <h2 id="n-dh">Defense vs position <small>Every game this week: where each defense ranks in what it allows to each position, from this season's box scores (top 10 shown, ties share a rank), and the players it sets up</small></h2>
@@ -1256,6 +1258,8 @@ const LABEL = {"lv-nba-h":"Games &amp; props","lv-nfl-h":"Games &amp; props","x-
   "xn-mkt-h":"Game odds","xn-props-h":"Book props","n-lh":"Best props","n-dh":"DvP","xn-inj-h":"Injuries"};
 let collapsed = {};
 try { collapsed = JSON.parse(localStorage.getItem("pb-collapsed") || "{}") || {}; } catch {}
+// First visit with this layout: start the secondary sections collapsed (DvP, injuries). The Show button opens them and the choice is remembered.
+try { if (!localStorage.getItem("pb-cdef")) { for (const k of ["sec-dh","sec-n-dh","sec-x-inj-h","sec-xn-inj-h"]) if (!(k in collapsed)) collapsed[k] = true; localStorage.setItem("pb-cdef","1"); localStorage.setItem("pb-collapsed", JSON.stringify(collapsed)); } } catch {}
 const saveC = () => { try { localStorage.setItem("pb-collapsed", JSON.stringify(collapsed)); } catch {} };
 
 const targets = {};
@@ -2205,12 +2209,14 @@ async function health(){
     const [st, inj, mk] = await Promise.all([j("status.json"), j("injuries.json").catch(() => null), j("market.json").catch(() => null)]);
     const up = Date.parse(st.updated_at), age = Date.now() - up, h = new Date().getUTCHours();
     const season = h >= 14 || h <= 6;          // game hours (UTC) when the robot runs every 30 min
-    const state = age < 60*60000 ? "ok" : age < (season ? 3 : 14)*3600000 ? "late" : "stale";
+    const state = age < 90*60000 ? "ok" : age < (season ? 3 : 14)*3600000 ? "late" : "stale";
     const parts = [`<span><span class="pf-dot"></span>Board <b>${fmt(new Date(up))}</b> · ${ago(age)}</span>`];
     const it = newest(inj), mt = newest(mk);
-    if (mt) parts.push(`<span>Lines & splits <b>${fmt(new Date(mt))}</b></span>`);
-    if (it) parts.push(`<span>Injuries <b>${fmt(new Date(it))}</b></span>`);
-    parts.push(`<span>Live scores update on screen</span>`);
+    if (mt) parts.push(`<span class="pf-x">Lines & splits <b>${fmt(new Date(mt))}</b></span>`);
+    if (it) parts.push(`<span class="pf-x">Injuries <b>${fmt(new Date(it))}</b></span>`);
+    parts.push(`<span class="pf-x">Sources: ESPN · Action Network · Kalshi</span>`, `<span class="pf-x">Auto-updates every 30 min</span>`);
+    if (st.errors && st.errors.length) parts.push(`<span class="pf-x" title="${st.errors.map(x => String(x).replace(/"/g, "'")).join(" | ")}">Last run had ${st.errors.length} source warning${st.errors.length === 1 ? "" : "s"} (hover for details)</span>`);
+    parts.push(`<span class="pf-x">Live scores update on screen</span>`);
     if (state !== "ok") parts.push(`<span>${state === "stale" ? "Data is stale — the update robot may be delayed." : "Update is a little late."}</span><button type="button" id="pf-r">Refresh data</button>`);
     bar.dataset.s = state; bar.innerHTML = parts.join(""); failed = false; wire();
   } catch (e) {
@@ -2659,4 +2665,326 @@ set();addEventListener("resize",set);addEventListener("load",set);if(window.Resi
 <style>.ms-sub{font:500 11.5px var(--body);color:var(--muted)}.ms-a.top{color:var(--ink);font-weight:600}</style>
 <style>.x-lines div.x-hit{background:color-mix(in srgb,var(--hit) 15%,transparent);border-bottom:0;border-radius:14px;box-shadow:inset 0 0 0 1.5px var(--hit);padding:10px 12px}.x-res{display:block;margin-top:5px;font:700 12.5px/1.35 var(--body);color:var(--hit)}.x-res.miss{color:var(--muted);font-weight:500}</style>
 <style>.ck-pick{cursor:pointer;font:inherit;color:inherit}.ck-use{font:inherit;font-weight:700;color:var(--court);background:none;border:0;text-decoration:underline;cursor:pointer;padding:0}.ck-pick:hover{border-color:var(--court)}</style>
+<style id="pb-p0-css">
+/* ===== P0 layer: skeletons, hero toolbar, favorites, bottom sheet, card-first mobile ===== */
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.sk{height:92px;border-radius:8px;border:1px solid var(--line);background:linear-gradient(100deg,var(--panel) 30%,var(--panel2) 50%,var(--panel) 70%);background-size:200% 100%}
+.sk.tall{height:112px}
+.sk-row{display:block;height:16px;border-radius:4px;background:var(--panel2);margin:10px 0}
+@media (prefers-reduced-motion:no-preference){.sk{animation:pbsk 1.3s linear infinite}}
+@keyframes pbsk{to{background-position:-200% 0}}
+.pb-hide{display:none!important}
+.pb-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.pb-chip{font:600 13px var(--body);min-height:40px;padding:0 14px;border-radius:999px;border:1.5px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
+.pb-chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.pb-chip:focus-visible,.pb-bar select:focus-visible,.fv:focus-visible,.pb-x:focus-visible{outline:2px solid var(--court);outline-offset:2px}
+.pb-bar select{font:500 13px var(--body);min-height:40px;padding:0 10px;border:1.5px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink)}
+.pb-cnt{font:500 12px var(--mono);color:var(--muted);margin-left:auto}
+.pb-how{font-size:12.5px;color:var(--muted);border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:8px 12px}
+.pb-how summary{cursor:pointer;font-weight:700;color:var(--ink);min-height:28px}
+.pb-how p{margin:6px 0 2px;line-height:1.45}
+.pb-empty{padding:14px;border:1px dashed var(--line);border-radius:8px;text-align:center}
+.pb-empty button{font:700 13px var(--body);color:var(--court);background:none;border:0;text-decoration:underline;cursor:pointer;min-height:36px}
+.pb-ss{font:600 11px var(--mono);color:var(--warn);margin-left:6px}
+.fv{display:inline-flex;align-items:center;justify-content:center;min-width:36px;min-height:36px;font-size:19px;line-height:1;color:var(--muted);cursor:pointer;border-radius:8px;user-select:none;vertical-align:middle}
+.fv[aria-pressed="true"]{color:var(--warn)}
+.lk>.fv{position:absolute;top:2px;right:2px;z-index:2}
+.pb-top{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:4px 10px;font:600 12px var(--mono);color:var(--muted);padding-top:2px}
+.pb-top b{color:var(--hit);font-weight:700}
+.pb-top i{font-style:normal;color:var(--ink)}
+.dnav button{min-width:44px;min-height:44px}
+.colb{min-height:36px;padding-inline:12px}
+.seg button{min-height:40px}
+.pb-x{display:none}
+#auto-st{display:none}
+@media (max-width:767px){#pb-fresh .pf-x{display:none}}
+@media (max-width:767px){
+  /* cards instead of a wide table */
+  .tw{overflow-x:visible;background:none;border:0}
+  .tw table,.tw tbody{display:block;width:100%}
+  .tw thead{display:none}
+  tr.pl{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:3px 8px;align-items:center;padding:8px 10px;margin-bottom:8px;background:var(--panel);border:1px solid var(--line);border-radius:10px;cursor:pointer}
+  tr.pl>td{display:block;border:0;padding:0;min-width:0}
+  tr.pl>td:nth-child(n+3):nth-last-child(n+4){display:none}
+  tr.pl>td:first-child{grid-column:1;grid-row:1}
+  tr.pl>td:nth-child(2){grid-column:2;grid-row:1}
+  tr.pl>td:nth-last-child(3){grid-column:3;grid-row:1}
+  tr.pl>td:nth-last-child(2){grid-column:2/4;grid-row:2}
+  tr.pl>td:last-child{grid-column:1/4;grid-row:3}
+  tr.pl .star{min-width:44px;min-height:44px}
+  /* player detail opens as a bottom sheet */
+  tr.det{display:block}
+  tr.det>td{display:block;position:fixed;left:0;right:0;bottom:0;max-height:84vh;overflow:auto;z-index:90;background:var(--panel);border-top:2px solid var(--court);border-radius:16px 16px 0 0;padding:12px 14px 32px;box-shadow:0 -14px 40px rgba(0,0,0,.5);overscroll-behavior:contain}
+  body.pb-sheet::after{content:"";position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:85}
+  body.pb-sheet{overflow:hidden}
+  .pb-x{display:block;position:sticky;top:-12px;margin:-4px 0 8px auto;font:700 14px var(--body);min-height:44px;padding:0 16px;border-radius:999px;border:1.5px solid var(--line);background:var(--panel2);color:var(--ink);z-index:3}
+  .pb-bar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+  .pb-bar>*{flex:none}
+}
+</style>
+<script id="pb-p0-js">
+(() => {
+"use strict";
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d){ try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+// Observers only watch childList, and every decorator below is idempotent, so our own edits settle after one pass.
+const watch = (el, fn) => { if (el) new MutationObserver(debounce(fn, 60)).observe(el, {childList: true, subtree: true}); };
+const norm = s => String(s || "").trim().toLowerCase();
+const LG = ["nba", "nfl"];
+const ID = {nba: {locks: "locks", q: "q", rows: "rows", live: "lv-nba", pe: "pe-nba", tab: "tab-nba"}, nfl: {locks: "n-locks", q: "n-q", rows: "n-rows", live: "lv-nfl", pe: "pe-nfl", tab: "tab-nfl"}};
+
+/* ---------- 1. Skeleton loading states (keep the word "Loading" first so the 15 s watchdog still works) ---------- */
+const SK = {games: 6, "n-games": 6, "x-mkt": 4, "xn-mkt": 4, "x-props": 6, "xn-props": 6, "x-inj": 4, "xn-inj": 4, locks: 8, "n-locks": 8};
+function skeletons(){
+  for (const [id, n] of Object.entries(SK)) {
+    const el = $(id); if (!el) continue;
+    const t = (el.textContent || "").trim();
+    if (t && !/^Loading/i.test(t)) continue;
+    if (el.querySelector(".sk")) continue;
+    el.innerHTML = '<span class="sr-only">Loading…</span>' + Array.from({length: n}, () => '<div class="sk tall"></div>').join("");
+  }
+  for (const id of ["rows", "n-rows"]) {
+    const tb = $(id); if (!tb || !/^Loading/i.test(tb.textContent.trim())) continue;
+    tb.innerHTML = '<tr><td colspan="16" class="empty"><span class="sr-only">Loading…</span>' + '<span class="sk-row"></span>'.repeat(6) + "</td></tr>";
+  }
+}
+skeletons();
+// If a skeleton is still showing after 20 s, say so instead of shimmering forever.
+setTimeout(() => {
+  for (const id of Object.keys(SK)) {
+    const el = $(id); if (!el || !el.querySelector(".sk")) continue;
+    el.innerHTML = '<p class="muted pb-empty">This section didn’t load. <button type="button" onclick="location.reload()">Reload</button></p>';
+  }
+}, 20000);
+
+/* ---------- 2. Favorites (by player name, saved in this browser) ---------- */
+let favs = new Set(store.get("pb-favs", []));
+const favOnly = () => store.get("pb-fav-only", false);
+const saveFavs = () => store.set("pb-favs", [...favs]);
+function mkStar(name){
+  const s = document.createElement("span");
+  s.className = "fv"; s.setAttribute("role", "button"); s.tabIndex = 0; s.dataset.n = name;
+  paintStar(s); return s;
+}
+function paintStar(s){
+  const on = favs.has(norm(s.dataset.n));
+  s.setAttribute("aria-pressed", String(on)); s.textContent = on ? "★" : "☆";
+  s.setAttribute("aria-label", (on ? "Remove " : "Add ") + s.dataset.n + (on ? " from favorites" : " to favorites"));
+}
+function toggleFav(s){
+  const k = norm(s.dataset.n); if (favs.has(k)) favs.delete(k); else favs.add(k);
+  saveFavs(); document.querySelectorAll(".fv").forEach(paintStar); applyAll();
+}
+document.addEventListener("click", e => { const s = e.target.closest && e.target.closest(".fv"); if (!s) return; e.stopPropagation(); e.preventDefault(); toggleFav(s); }, true);
+document.addEventListener("keydown", e => { if ((e.key === "Enter" || e.key === " ") && e.target.classList && e.target.classList.contains("fv")) { e.preventDefault(); e.stopPropagation(); toggleFav(e.target); } }, true);
+function decorateStars(){
+  document.querySelectorAll(".lk").forEach(c => {
+    if (c.querySelector(":scope > .fv")) return;
+    const w = c.querySelector(".who"), n = w && w.firstChild ? w.firstChild.textContent.trim() : "";
+    if (n) c.appendChild(mkStar(n));
+  });
+  document.querySelectorAll(".pe-c .nm").forEach(el => {
+    const p = el.previousElementSibling; if (p && p.classList.contains("fv")) return;
+    el.before(mkStar(el.textContent.trim()));
+  });
+}
+
+/* ---------- 3. Hero toolbar: filters + sort on Most appealing props ---------- */
+const DEF = {fav: false, min30: false, dvp: false, edge: false, sort: "score", pos: ""};
+const F = store.get("pb-hero", {}); for (const lg of LG) F[lg] = Object.assign({}, DEF, F[lg] || {});
+F.nba.fav = F.nfl.fav = favOnly();
+const saveF = () => { store.set("pb-hero", F); store.set("pb-fav-only", F.nba.fav || F.nfl.fav); };
+const HOW = {
+  nba: "<p><b>Most appealing props</b>: players who are active, average 20+ minutes, and cleared a stat line in every one of their recent games against tonight’s opponent. The line shown is just under his lowest output in those games. Cards are ranked by how far his average sits above that line, how steady he is, his minutes (capped at 34) and how many games the sample has (5 games = full credit).</p><p><b>Sample size</b>: most head-to-head samples are only 2–4 games, so they are noisy. Treat these as a short list to check, not a guarantee. “3/3” means 3 of 3 games.</p><p><b>Edge</b> (Prop Edge Finder): the model’s chance of the bet winning minus the chance the price implies, in percentage points. The finder shows 2+ by default; the Edge 5+ chip narrows it to bigger gaps. Each Edge card shows the book it priced from; the “Lines as of” time is under the list. <b>DvP</b>: the opponent’s defense ranks near the top for letting that position score.</p>",
+  nfl: "<p><b>Most appealing props</b>: this week’s players who are not Out or Doubtful and cleared a stat line in each of their last 5 games. At most 3 quarterbacks are shown. Ranked by how far his average sits above the line, how steady he is, and his role.</p><p><b>Sample size</b>: only 5 games of history exist at most, so treat these as a short list to check, not a guarantee.</p><p><b>Edge</b> (Prop Edge Finder): the model’s chance of winning minus the chance the price implies, in percentage points. The finder shows 2+ by default; the Edge 5+ chip narrows it. <b>DvP</b>: named on the defense-vs-position sheet.</p>"
+};
+function mkBar(lg){
+  const sec = $(ID[lg].locks).closest("section"); if (!sec || sec.querySelector(".pb-bar")) return;
+  const bar = document.createElement("div"); bar.className = "pb-bar"; bar.setAttribute("role", "group"); bar.setAttribute("aria-label", "Filter and sort best props"); bar.dataset.lg = lg;
+  const chip = (k, t, title) => `<button type="button" class="pb-chip" data-k="${k}" title="${title}" aria-pressed="false">${t}</button>`;
+  bar.innerHTML = chip("fav", "★ Favorites", "Show only players you starred") +
+    (lg === "nba" ? chip("min30", "30+ min", "Only players averaging 30 or more minutes") : "") +
+    chip("dvp", "DvP spot", "Only players named on the defense-vs-position sheet") +
+    chip("edge", "Edge 5+ pts", "Prop Edge Finder: only bets where the model beats the price by 5 or more points (default shows 2 or more)") +
+    (lg === "nfl" ? `<select data-k="pos" aria-label="Position"><option value="">All positions</option><option>QB</option><option>RB</option><option>WR</option><option>TE</option></select>` : "") +
+    `<select data-k="sort" aria-label="Sort"><option value="score">Sort: best prop</option>${lg === "nba" ? '<option value="min">Sort: most minutes</option>' : ""}<option value="n">Sort: biggest sample</option></select>` +
+    `<button type="button" class="pb-chip" data-k="clear" hidden>Clear</button><button type="button" class="pb-chip" data-k="link" title="Copy a link to this view">Copy link</button><span class="pb-cnt" aria-live="polite"></span>`;
+  const how = document.createElement("details"); how.className = "pb-how"; how.innerHTML = `<summary>How these are picked, and how much to trust them</summary>${HOW[lg]}`;
+  const h2 = sec.querySelector("h2"); h2.after(bar); bar.after(how);
+  const note = document.createElement("div"); note.className = "pb-empty pb-hide"; note.dataset.lg = lg; $(ID[lg].locks).after(note);
+  bar.addEventListener("click", e => {
+    const b = e.target.closest("button[data-k]"); if (!b) return; const k = b.dataset.k, f = F[lg];
+    if (k === "clear") { Object.assign(f, DEF); F.nba.fav = F.nfl.fav = false; setEdge(lg, false); }
+    else if (k === "link") { copyLink(b); return; }
+    else if (k === "edge") { f.edge = !f.edge; setEdge(lg, f.edge); }
+    else if (k === "fav") { F.nba.fav = F.nfl.fav = !f.fav; }
+    else f[k] = !f[k];
+    saveF(); applyAll();
+  });
+  bar.addEventListener("change", e => { const s = e.target.closest("select[data-k]"); if (!s) return; F[lg][s.dataset.k] = s.value; saveF(); applyAll(); });
+  note.addEventListener("click", e => { if (e.target.closest("button")) { Object.assign(F[lg], DEF, {fav: false}); F.nba.fav = F.nfl.fav = false; setEdge(lg, false); saveF(); applyAll(); } });
+}
+function setEdge(lg, on){
+  const s = $("pe-m-" + lg); if (!s) return;
+  const v = on ? "5" : "2"; if (s.value === v) return;
+  s.value = v; s.dispatchEvent(new Event("change", {bubbles: true}));
+}
+function applyLocks(lg){
+  const box = $(ID[lg].locks), f = F[lg], bar = box.closest("section").querySelector(".pb-bar"), note = box.parentNode.querySelector(".pb-empty[data-lg]");
+  const cards = [...box.querySelectorAll(".lk")];
+  cards.forEach((c, i) => {
+    if (c.dataset.i == null) c.dataset.i = i;
+    const w = c.querySelector(".who"), name = w && w.firstChild ? norm(w.firstChild.textContent) : "";
+    const tm = (c.querySelector(".tm") || {}).textContent || "", why = (c.querySelector(".why") || {}).textContent || "";
+    const min = parseFloat((/([\d.]+) min/.exec(tm) || [])[1]) || 0, n = parseInt((/(\d+)\/\d+/.exec(why) || [])[1], 10) || 0;
+    const pos = (lg === "nfl" ? tm.split("·")[0] : "").trim();
+    let ok = true;
+    if (f.fav && !favs.has(name)) ok = false;
+    if (f.min30 && min < 30) ok = false;
+    if (f.dvp && !c.querySelector(".dvpb")) ok = false;
+    if (f.pos && pos !== f.pos) ok = false;
+    c.classList.toggle("pb-hide", !ok);
+    c.style.order = f.sort === "min" ? Math.round(1000 - min * 10) : f.sort === "n" ? 100 - n * 10 + (+c.dataset.i) : +c.dataset.i;
+    // Trust: always show the sample size; flag samples under 3 games as small.
+    if (n && n < 3 && !c.querySelector(".pb-ss")) { const s = document.createElement("span"); s.className = "pb-ss"; s.textContent = "n=" + n + " · small sample"; c.querySelector(".why").appendChild(s); }
+  });
+  const shown = cards.filter(c => !c.classList.contains("pb-hide")).length;
+  if (bar) {
+    bar.querySelectorAll("button.pb-chip[data-k]").forEach(b => { const k = b.dataset.k; if (k in DEF) b.setAttribute("aria-pressed", String(!!f[k])); });
+    const pe = $("pe-m-" + lg); if (pe) { f.edge = +pe.value >= 5; bar.querySelector('[data-k="edge"]').setAttribute("aria-pressed", String(f.edge)); }
+    bar.querySelectorAll("select[data-k]").forEach(s => { s.value = f[s.dataset.k]; });
+    const act = f.fav || f.min30 || f.dvp || f.edge || f.pos || f.sort !== "score";
+    bar.querySelector('[data-k="clear"]').hidden = !act;
+    bar.querySelector(".pb-cnt").textContent = cards.length ? `${shown} of ${cards.length}` : "";
+  }
+  if (note) {
+    const empty = cards.length > 0 && shown === 0;
+    note.classList.toggle("pb-hide", !empty);
+    if (empty) note.innerHTML = f.fav && !favs.size ? "No favorites yet. Tap the ☆ on any player card to add one. <button type=\"button\">Show everyone</button>" : "No props match these filters. <button type=\"button\">Clear filters</button>";
+  }
+}
+function applyEdgeFav(){
+  document.querySelectorAll(".pe-c").forEach(c => {
+    const n = c.querySelector(".nm"); const hide = favOnly() && n && !favs.has(norm(n.textContent));
+    c.classList.toggle("pb-hide", !!hide);
+  });
+}
+function applyAll(){ for (const lg of LG) { mkBar(lg); applyLocks(lg); } applyEdgeFav(); }
+
+/* ---------- 4. Top 1–3 edges on each game card (from the Prop Edge Finder model) ---------- */
+const ALIAS = {WSH: "WAS", NY: "NYK", GS: "GSW", SA: "SAS", NO: "NOP", UTAH: "UTA", JAX: "JAC", LAR: "LA", LAC: "LAC"};
+const cn = t => { t = String(t || "").toUpperCase(); return ALIAS[t] || t; };
+function gameTops(lg){
+  const res = (window.PEdge && PEdge.RES && PEdge.RES[lg]) || []; if (!res.length) return;
+  document.querySelectorAll("#" + ID[lg].live + " .lv-u > summary").forEach(sm => {
+    if (sm.querySelector(".pb-top")) return;
+    const m = /^(\S+) at (\S+)$/.exec(sm.getAttribute("aria-label") || ""); if (!m) return;
+    const a = cn(m[1]), h = cn(m[2]);
+    const rows = res.filter(r => r.edge > 0 && ((cn(r.team) === a && cn(r.opp) === h) || (cn(r.team) === h && cn(r.opp) === a))).sort((x, y) => y.score - x.score);
+    const seen = new Set(), top = [];
+    for (const r of rows) { if (seen.has(r.name)) continue; seen.add(r.name); top.push(r); if (top.length === 3) break; }
+    if (!top.length) return;
+    const d = document.createElement("span"); d.className = "pb-top";
+    d.innerHTML = '<span>Top edges</span>' + top.map(r => `<span><i>${esc(r.name.split(" ").slice(-1)[0])}</i> ${esc(String(r.side).slice(0, 1).toUpperCase())}${esc(r.line)} ${esc(r.label)} <b>+${r.edge.toFixed(1)}</b></span>`).join("");
+    sm.appendChild(d);
+  });
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+
+/* ---------- 5. Mobile bottom sheet for player detail ---------- */
+const mq = window.matchMedia("(max-width:767px)");
+let lastOpen = null;
+function sheet(){
+  const dets = document.querySelectorAll("tr.det"), on = mq.matches && dets.length > 0;
+  document.body.classList.toggle("pb-sheet", on);
+  dets.forEach(tr => {
+    const td = tr.firstElementChild; if (!td || td.querySelector(":scope > .pb-x")) return;
+    const b = document.createElement("button"); b.type = "button"; b.className = "pb-x"; b.textContent = "Close ✕"; b.setAttribute("aria-label", "Close player details");
+    td.prepend(b);
+    const prev = tr.previousElementSibling; lastOpen = prev && prev.dataset ? prev.dataset.k : null;
+    if (mq.matches) b.focus({preventScroll: true});
+  });
+}
+function closeSheet(){
+  const tr = document.querySelector("tr.det"); if (!tr) return;
+  const prev = tr.previousElementSibling; if (prev) prev.click();
+  setTimeout(() => { const r = lastOpen && document.querySelector(`tr.pl[data-k="${CSS.escape(lastOpen)}"]`); if (r) r.focus({preventScroll: true}); }, 80);
+}
+document.addEventListener("click", e => {
+  if (!document.body.classList.contains("pb-sheet")) return;
+  if (e.target.closest(".pb-x") || e.target === document.body || e.target === document.documentElement) closeSheet();
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape" && document.body.classList.contains("pb-sheet")) closeSheet(); });
+mq.addEventListener && mq.addEventListener("change", sheet);
+
+/* ---------- 6. Deep links + URL sync: ?sport=nfl &date=YYYY-MM-DD &player=Name &game=LAL-DEN ---------- */
+const Q = new URLSearchParams(location.search);
+const curLg = () => ($("tab-nfl") && !$("tab-nfl").hidden) ? "nfl" : "nba";
+function syncUrl(){
+  const u = new URL(location.href), lg = curLg();
+  lg === "nfl" ? u.searchParams.set("sport", "nfl") : u.searchParams.delete("sport");
+  const day = window.PB && PB.nbaDay, today = new Date().toLocaleDateString("en-CA", {timeZone: "America/New_York"});
+  lg === "nba" && day && day !== today ? u.searchParams.set("date", day) : u.searchParams.delete("date");
+  const q = ($(ID[lg].q) || {}).value;
+  q ? u.searchParams.set("player", q) : u.searchParams.delete("player");
+  try { history.replaceState(null, "", u); } catch {}
+}
+const syncSoon = debounce(syncUrl, 250);
+["click", "input", "change"].forEach(t => document.addEventListener(t, syncSoon, true));
+function copyLink(btn){
+  syncUrl();
+  const done = ok => { const t = btn.textContent; btn.textContent = ok ? "Link copied" : "Copy it from the address bar"; setTimeout(() => btn.textContent = t, 1800); };
+  (navigator.clipboard ? navigator.clipboard.writeText(location.href).then(() => done(true), () => done(false)) : Promise.reject()).catch(() => done(false));
+}
+function poll(fn, ms = 12000){ const t0 = Date.now(); const id = setInterval(() => { let r = false; try { r = fn(); } catch {} if (r || Date.now() - t0 > ms) clearInterval(id); }, 300); }
+function deepLink(){
+  if (Q.get("sport") === "nfl") { const b = $("tb-nfl"); if (b) b.click(); }
+  else if (Q.get("sport") === "nba") { const b = $("tb-nba"); if (b) b.click(); }
+  const lg = Q.get("sport") === "nfl" ? "nfl" : "nba";
+  const date = Q.get("date");
+  if (date && lg === "nba") poll(() => {
+    const cur = window.PB && PB.nbaDay; if (!cur) return false; if (cur === date) return true;
+    const b = $(date > cur ? "dn" : "dp"); if (!b || b.disabled) return true; b.click(); return false;
+  }, 15000);
+  const pl = Q.get("player");
+  if (pl) {
+    const inp = $(ID[lg].q);
+    if (inp) { inp.value = pl; inp.dispatchEvent(new Event("input", {bubbles: true})); }
+    poll(() => { const rows = document.querySelectorAll("#" + ID[lg].rows + " tr.pl"); if (rows.length === 1) { if (rows[0].getAttribute("aria-expanded") !== "true") rows[0].click(); rows[0].scrollIntoView({block: "start"}); return true; } return false; });
+  }
+  const gm = Q.get("game");
+  if (gm) poll(() => {
+    const parts = gm.toUpperCase().split(/[-@_ ]+/).filter(Boolean);
+    for (const d of document.querySelectorAll("#" + ID[lg].live + " .lv-u")) {
+      const lbl = (d.querySelector("summary").getAttribute("aria-label") || "").toUpperCase();
+      if (parts.every(p => lbl.includes(p))) { d.open = true; d.scrollIntoView({block: "center"}); return true; }
+    }
+    return false;
+  });
+}
+
+/* ---------- 7. Keyboard: "/" search, ← → change day (or week) ---------- */
+document.addEventListener("keydown", e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const t = e.target, typing = t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+  if (typing) { if (e.key === "Escape" && t.tagName === "INPUT") t.blur(); return; }
+  if (e.key === "/") { const i = $(ID[curLg()].q); if (i) { e.preventDefault(); i.focus(); i.scrollIntoView({block: "center"}); } }
+  else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+    const l = e.key === "ArrowLeft", b = curLg() === "nba" ? $(l ? "dp" : "dn") : $(l ? "wk-prev" : "wk-next");
+    if (b && !b.disabled) { e.preventDefault(); b.click(); }
+  }
+});
+
+/* ---------- boot ---------- */
+const boot = debounce(() => { skeletons(); decorateStars(); applyAll(); gameTops("nba"); gameTops("nfl"); sheet(); }, 50);
+["locks", "n-locks", "pe-nba", "pe-nfl", "rows", "n-rows", "lv-nba", "lv-nfl"].forEach(id => watch($(id), boot));
+// Edge Finder sections are created later by another script; watch the panels for them too.
+document.querySelectorAll(".tabp").forEach(p => new MutationObserver(debounce(() => { ["pe-nba", "pe-nfl"].forEach(id => { const el = $(id); if (el && !el.dataset.w) { el.dataset.w = 1; watch(el, boot); boot(); } }); }, 100)).observe(p, {childList: true}));
+boot(); deepLink();
+})();
+</script>
 </body></html>
