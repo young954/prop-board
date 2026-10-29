@@ -371,6 +371,18 @@ const STATS = {
   blk:{l:"BLK", f:g=>g.blk, lad:[0.5,1.5,2.5,3.5,4.5], floor:0.5, w:.5},
   sb:{l:"STL+BLK", f:g=>g.stl+g.blk, lad:[0.5,1.5,2.5,3.5,4.5], floor:1.5, w:.6},
 };
+const nkey = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z ]/g, " ").replace(/\b(jr|sr|ii|iii|iv)\b/g, " ").replace(/\s+/g, " ").trim();
+let book = {};
+const bookOf = (p, k) => (book[nkey(p.name) + "|" + p.team] || {})[k] || null;
+const bookKeys = p => Object.keys(book[nkey(p.name) + "|" + p.team] || {});
+function loadBook(snap, nfl){
+  const next = {}, docs = snap.docs.map(d => ({id:d.id, ...d.data()})).filter(d => /^w\d/.test(d.id) === nfl).sort((a, b) => a.id.localeCompare(b.id));
+  for (const d of docs) for (const [team, name, k, line, over, under, src] of d.rows || []) (next[nkey(name) + "|" + team] ||= {})[k] = {line, over, under, src};
+  book = next;
+}
+const odds = n => n == null ? "—" : n > 0 ? "+" + n : String(n);
+const dbl = g => [g.pts, g.reb, g.ast, g.stl, g.blk].filter(v => v >= 10).length;
+const CK = {...STATS, dd:{l:"Double-double", f:g => dbl(g) >= 2 ? 1 : 0, bin:true}, td:{l:"Triple-double", f:g => dbl(g) >= 3 ? 1 : 0, bin:true}};
 const COLS = [
   {k:"star", l:""},{k:"name", l:"Player", s:"name"},{k:"gp", l:"GP", s:"gp", n:1},{k:"min", l:"MIN", s:"min", n:1},
   {k:"pts", l:"PTS", s:"pts", n:1},{k:"reb", l:"REB", s:"reb", n:1},{k:"ast", l:"AST", s:"ast", n:1},{k:"tp", l:"3PM", s:"tp", n:1},
@@ -501,25 +513,34 @@ function row(p){
     <td>${statusPill(p)}</td><td>${bestCell(p)}</td><td>${chipList(p)}</td></tr>`;
 }
 function bars(p, k, line){
-  const L = p.logs.slice(-10), f = STATS[k].f, vals = L.map(f);
+  const K = CK[k], bin = !!K.bin, L = p.logs.slice(-10), f = K.f, vals = L.map(f);
   if (!vals.length) return "";
-  const W = 300, H = 120, pad = 18, max = Math.max(...vals, line||0, 1)*1.15, bw = Math.min(26, (W-pad*2)/vals.length - 6);
+  const W = 300, H = 120, pad = 18, max = Math.max(...vals, bin ? 0 : (line||0), 1)*1.15, bw = Math.min(26, (W-pad*2)/vals.length - 6);
   const y = v => H - pad - v/max*(H-pad*2);
   const step = (W-pad*2)/vals.length;
-  let s = `<svg class="bars" viewBox="0 0 ${W} ${H}" role="img" aria-label="${STATS[k].l} last ${vals.length} games">`;
+  let s = `<svg class="bars" viewBox="0 0 ${W} ${H}" role="img" aria-label="${K.l} last ${vals.length} games">`;
   vals.forEach((v,i) => {
-    const x = pad + i*step + (step-bw)/2, hit = line==null || v>line;
+    const x = pad + i*step + (step-bw)/2, hit = bin ? v > 0 : (line==null || v>line);
     s += `<rect x="${x.toFixed(1)}" y="${y(v).toFixed(1)}" width="${bw.toFixed(1)}" height="${(H-pad-y(v)).toFixed(1)}" rx="2" fill="${hit?"var(--hit)":"var(--miss)"}" opacity=".85"/>`;
-    s += `<text x="${(x+bw/2).toFixed(1)}" y="${(y(v)-4).toFixed(1)}" text-anchor="middle" font-size="10" font-family="JetBrains Mono,monospace" fill="var(--ink)">${v}</text>`;
+    if (bin && !v) s += `<rect x="${x.toFixed(1)}" y="${(H-pad-3).toFixed(1)}" width="${bw.toFixed(1)}" height="3" rx="1.5" fill="var(--miss)" opacity=".85"/>`;
+    s += `<text x="${(x+bw/2).toFixed(1)}" y="${(y(v)-4).toFixed(1)}" text-anchor="middle" font-size="10" font-family="JetBrains Mono,monospace" fill="var(--ink)">${bin ? (v ? "Yes" : "No") : v}</text>`;
     s += `<text x="${(x+bw/2).toFixed(1)}" y="${H-4}" text-anchor="middle" font-size="9" font-family="JetBrains Mono,monospace" fill="var(--muted)">${esc(L[i].opp)}</text>`;
   });
-  if (line!=null){ const ly = y(line).toFixed(1); s += `<line x1="${pad}" x2="${W-pad}" y1="${ly}" y2="${ly}" stroke="var(--court)" stroke-width="1.5" stroke-dasharray="4 3"/><text x="${W-pad}" y="${(y(line)-4).toFixed(1)}" text-anchor="end" font-size="10" font-family="JetBrains Mono,monospace" fill="var(--court)">${line}</text>`; }
+  if (!bin && line!=null){ const ly = y(line).toFixed(1); s += `<line x1="${pad}" x2="${W-pad}" y1="${ly}" y2="${ly}" stroke="var(--court)" stroke-width="1.5" stroke-dasharray="4 3"/><text x="${W-pad}" y="${(y(line)-4).toFixed(1)}" text-anchor="end" font-size="10" font-family="JetBrains Mono,monospace" fill="var(--court)">${line}</text>`; }
   return s + `</svg>`;
 }
 function detail(p){
-  const c = chk[p.key] || {k: p.best?.k || "pts", line: p.best?.line ?? null};
-  chk[p.key] = c;
-  const f = STATS[c.k].f, L = p.logs;
+  let c = chk[p.key];
+  if (!c){ const k0 = bookOf(p, p.best?.k) ? p.best.k : (bookKeys(p).find(k => CK[k]) || p.best?.k || "pts"); c = chk[p.key] = {k:k0, line:null, auto:true}; }
+  if (CK[c.k].bin) c.line = 0.5;
+  else if (c.auto){ const b0 = bookOf(p, c.k); c.line = b0 ? b0.line : (c.k === p.best?.k ? (p.best.line ?? null) : null); }
+  const f = CK[c.k].f, L = p.logs;
+  const bin = !!CK[c.k].bin, bk = bookOf(p, c.k);
+  const note = bin ? `Green means he got one (10 or more in ${c.k === "dd" ? "two" : "three"} of points, rebounds, assists, steals and blocks).`
+    : bk ? (c.auto ? `Line loaded automatically from ${esc(bk.src)}: <b>${bk.line}</b> (over ${odds(bk.over)}, under ${odds(bk.under)}). It updates by itself when lines refresh.` : `You typed ${c.line}. The posted ${esc(bk.src)} line is <b>${bk.line}</b>. <button type="button" class="ck-use">Use posted line</button>`)
+    : `No posted line for this prop yet. Type one in to check it.`;
+  const picks = bookKeys(p).filter(k => CK[k]).map(k => `<button type="button" class="chip ck-pick" data-k="${k}">${CK[k].l} ${book[nkey(p.name) + "|" + p.team][k].line}</button>`).join(" ");
+
   const rate = n => { const s = L.slice(-n); if (!s.length || c.line==null) return null; const h = s.filter(g => f(g) > c.line).length; return {h, n:s.length}; };
   const rc = r => !r ? "" : r.h===r.n ? "g" : r.h/r.n < .5 ? "r" : "";
   const hr = (() => { if (!p.h2h.length || c.line==null) return null; return {h:p.h2h.filter(g => f(g) > c.line).length, n:p.h2h.length}; })();
@@ -535,14 +556,15 @@ function detail(p){
       ${p.l5.length?`<div class="allp"><b>Every 100% line, last ${p.h2hN} vs ${esc(p.opp)}:</b> ${p.l5.map(x=>`<span class="chip">${esc(x.l)} ${x.line}+</span>`).join(" ")}</div>`:""}
     </div>
     <div class="box"><h3>Line checker</h3>
+      ${picks ? `<div class="allp"><b>Posted lines (tap one):</b> ${picks}</div>` : ""}
       <div class="chk">
-        <select id="ck-s" aria-label="Stat">${Object.entries(STATS).map(([k,s])=>`<option value="${k}" ${k===c.k?"selected":""}>${s.l}</option>`).join("")}</select>
-        <label class="muted" for="ck-l" style="font-size:12px">Over</label>
-        <input id="ck-l" type="number" step="0.5" inputmode="decimal" value="${c.line ?? ""}" placeholder="Line">
+        <select id="ck-s" aria-label="Stat">${Object.entries(CK).map(([k,s])=>`<option value="${k}" ${k===c.k?"selected":""}>${s.l}</option>`).join("")}</select>
+        ${bin ? `<span class="muted" style="font-size:12px">Did he record one?</span>` : `<label class="muted" for="ck-l" style="font-size:12px">Over</label>
+        <input id="ck-l" type="number" step="0.5" inputmode="decimal" value="${c.line ?? ""}" placeholder="Line">`}
       </div>
       <div class="rates">${R.map(([l,r]) => `<div class="rate ${rc(r)}"><b>${r?r.h+"/"+r.n:"—"}</b><small>${l}</small></div>`).join("")}</div>
       ${bars(p, c.k, c.line)}
-      <div class="muted" style="font-size:12px">Enter the book's line to see how often he's gone over it. Green bars cleared the line.</div>
+      <div class="muted" style="font-size:12px">${note}${bin ? "" : " Green bars cleared the line."}</div>
     </div>
   </div></td></tr>`;
 }
@@ -579,8 +601,10 @@ function render(){
   $("rows").querySelectorAll(".star").forEach(b => b.onclick = () => { const k=b.dataset.w; if (watch[k]) delete watch[k]; else watch[k]=1; save(); render(); });
   const s = $("ck-s"), l = $("ck-l");
   if (s && open){
-    s.onchange = () => { chk[open] = {k:s.value, line:null}; render(); };
-    l.onchange = () => { const v = parseFloat(l.value); chk[open].line = isNaN(v)?null:v; render(); $("ck-l")?.focus(); };
+    s.onchange = () => { chk[open] = {k:s.value, line:null, auto:true}; render(); };
+    if (l) l.onchange = () => { const v = parseFloat(l.value); chk[open].line = isNaN(v)?null:v; chk[open].auto = false; render(); $("ck-l")?.focus(); };
+    document.querySelectorAll(".ck-pick").forEach(b => b.onclick = () => { chk[open] = {k:b.dataset.k, line:null, auto:true}; render(); });
+    document.querySelectorAll(".ck-use").forEach(b => b.onclick = () => { chk[open].auto = true; render(); });
   }
 }
 $("q").oninput = e => { st.q = e.target.value; render(); };
@@ -602,6 +626,7 @@ render();
     h2h = Object.fromEntries(snap.docs.map(d => [d.id, d.data()]));
     if (loaded){ build(); render(); }
   }, () => {});
+  db.collection("props").onSnapshot(snap => { loadBook(snap, false); if (loaded) render(); }, () => {});
   db.collection("dvp").onSnapshot(snap => {
     dvpN = Object.fromEntries(snap.docs.map(d => [d.id, d.data()]));
     if (loaded){ build(); render(); } renderNDvp();
@@ -713,6 +738,16 @@ const STATS = {
   tgt:{l:"TARGETS", f:g=>g[12], floor:2.5, w:.5, pos:["RB","WR","TE"]},
   td:{l:"ANYTIME TD", f:g=>g[10]+g[14], floor:0.5, w:.75, pos:["RB","WR","TE","FB"]},
 };
+const nkey = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z ]/g, " ").replace(/\b(jr|sr|ii|iii|iv)\b/g, " ").replace(/\s+/g, " ").trim();
+let book = {};
+const bookOf = (p, k) => (book[nkey(p.name) + "|" + p.team] || {})[k] || null;
+const bookKeys = p => Object.keys(book[nkey(p.name) + "|" + p.team] || {});
+function loadBook(snap, nfl){
+  const next = {}, docs = snap.docs.map(d => ({id:d.id, ...d.data()})).filter(d => /^w\d/.test(d.id) === nfl).sort((a, b) => a.id.localeCompare(b.id));
+  for (const d of docs) for (const [team, name, k, line, over, under, src] of d.rows || []) (next[nkey(name) + "|" + team] ||= {})[k] = {line, over, under, src};
+  book = next;
+}
+const odds = n => n == null ? "—" : n > 0 ? "+" + n : String(n);
 const COLS = [
   {k:"star",l:""},{k:"name",l:"Player",s:"name"},{k:"gp",l:"GP",s:"gp",n:1},
   {k:"pyd",l:"Pass yds",s:"pyd",n:1},{k:"ptd",l:"Pass TD",s:"ptd",n:1},{k:"ryd",l:"Rush yds",s:"ryd",n:1},
@@ -818,7 +853,12 @@ function logTable(L, withSeason){
 }
 function detail(p){
   const keys = Object.keys(STATS).filter(k => STATS[k].pos.includes(p.pos));
-  const c = chk[p.key] || {k: p.best?.k || keys[0], line: p.best?.line ?? null}; chk[p.key] = c;
+  let c = chk[p.key];
+  if (!c){ const k0 = (keys.includes(p.best?.k) && bookOf(p, p.best.k)) ? p.best.k : (bookKeys(p).find(k => keys.includes(k)) || p.best?.k || keys[0]); c = chk[p.key] = {k:k0, line:null, auto:true}; }
+  if (c.auto){ const b0 = bookOf(p, c.k); c.line = b0 ? b0.line : (c.k === p.best?.k ? (p.best.line ?? null) : null); }
+  const bk = bookOf(p, c.k);
+  const note = bk ? (c.auto ? `Line loaded automatically from ${esc(bk.src)}: <b>${bk.line}</b> (over ${odds(bk.over)}, under ${odds(bk.under)}). It updates by itself when lines refresh.` : `You typed ${c.line}. The posted ${esc(bk.src)} line is <b>${bk.line}</b>. <button type="button" class="ck-use">Use posted line</button>`) : `No posted line for this prop yet. Type one in to check it.`;
+  const picks = bookKeys(p).filter(k => keys.includes(k)).map(k => `<button type="button" class="chip ck-pick" data-k="${k}">${STATS[k].l} ${book[nkey(p.name) + "|" + p.team][k].line}</button>`).join(" ");
   const f = STATS[c.k].f, L = p.logs;
   const rate = arr => (!arr.length || c.line==null) ? null : {h:arr.filter(g => f(g) > c.line).length, n:arr.length};
   const rc = r => !r ? "" : r.h===r.n ? "g" : r.h/r.n < .5 ? "r" : "";
@@ -832,12 +872,13 @@ function detail(p){
       ${p.l5.length?`<div class="allp"><b>Every 100% line, last ${Math.min(5,p.gp)}:</b> ${p.l5.map(x=>`<span class="chip">${esc(x.l)} ${x.line}+</span>`).join(" ")}</div>`:""}
     </div>
     <div class="box"><h3>Line checker</h3>
+      ${picks ? `<div class="allp"><b>Posted lines (tap one):</b> ${picks}</div>` : ""}
       <div class="chk"><select id="nk-s" aria-label="Stat">${keys.map(k=>`<option value="${k}" ${k===c.k?"selected":""}>${STATS[k].l}</option>`).join("")}</select>
         <label class="muted" for="nk-l" style="font-size:12px">Over</label>
         <input id="nk-l" type="number" step="0.5" inputmode="decimal" value="${c.line ?? ""}" placeholder="Line"></div>
       <div class="rates">${R.map(([l,r]) => `<div class="rate ${rc(r)}"><b>${r?r.h+"/"+r.n:"—"}</b><small>${esc(l)}</small></div>`).join("")}</div>
       ${bars(L, c.k, c.line)}
-      <div class="muted" style="font-size:12px">Enter the book's line to see how often he's gone over it. Green bars cleared the line.</div>
+      <div class="muted" style="font-size:12px">${note} Green bars cleared the line.</div>
     </div></div></td></tr>`;
 }
 function renderLocks(){
@@ -891,8 +932,10 @@ function render(){
     tr.onkeydown = e => { if ((e.key==="Enter"||e.key===" ") && e.target===tr){ e.preventDefault(); tog(); } }; });
   $("n-rows").querySelectorAll(".star").forEach(b => b.onclick = () => { const k=b.dataset.w; if (watch[k]) delete watch[k]; else watch[k]=1; save(); render(); });
   const s = $("nk-s"), l = $("nk-l");
-  if (s && open){ s.onchange = () => { chk[open] = {k:s.value, line:null}; render(); };
-    l.onchange = () => { const v = parseFloat(l.value); chk[open].line = isNaN(v)?null:v; render(); $("nk-l")?.focus(); }; }
+  if (s && open){ s.onchange = () => { chk[open] = {k:s.value, line:null, auto:true}; render(); };
+    l.onchange = () => { const v = parseFloat(l.value); chk[open].line = isNaN(v)?null:v; chk[open].auto = false; render(); $("nk-l")?.focus(); };
+    document.querySelectorAll(".ck-pick").forEach(b => b.onclick = () => { chk[open] = {k:b.dataset.k, line:null, auto:true}; render(); });
+    document.querySelectorAll(".ck-use").forEach(b => b.onclick = () => { chk[open].auto = true; render(); }); }
 }
 $("n-q").oninput = e => { st.q = e.target.value; render(); };
 $("n-team").onchange = e => { st.team = e.target.value; save(); render(); };
@@ -908,6 +951,7 @@ render();
   db.collection("nfl_teams").onSnapshot(s => { teams = Object.fromEntries(s.docs.map(d => [d.id, d.data()])); all(); }, () => { $("n-rows").innerHTML = `<tr><td colspan="16" class="empty">Couldn't load. Reload to try again.</td></tr>`; });
   db.collection("nfl_slate").onSnapshot(s => { slate = s.docs.map(d => ({id:d.id, ...d.data()})); renderSlate(); renderDvp(); all(); }, () => {});
   db.collection("nfl_dvp").onSnapshot(s => { dvp = Object.fromEntries(s.docs.map(d => [d.id, d.data()])); renderDvp(); renderSlate(); all(); }, () => {});
+  db.collection("props").onSnapshot(s => { loadBook(s, true); if (loaded) render(); }, () => {});
 })();
 })();
 </script>
@@ -1009,6 +1053,12 @@ function splitBar(r){
 }
 const SPLIT_KEY = `<div class="x-key"><span><i class="b"></i>Bets = share of the bets placed (number of tickets)</span><span><i class="m"></i>Money = share of the dollars wagered</span><span class="x-keyhint">If the money share is a lot bigger than the bets share, bigger bettors are on that side.</span></div>`;
 
+function finalOf(id, g, A, H){
+  const lv = window.PBLive && window.PBLive.final(/^w\d/.test(id) ? "nfl" : "nba", A, H);
+  if (lv) return lv;
+  if (g && /final/i.test(g.status || "") && g.as != null && g.hs != null) return {a:+g.as, h:+g.hs};
+  return null;
+}
 function marketCard(id, m, g){
   const [A, H] = id.split("-").slice(-2);
   const nm = t => (g && (t === A ? g.awayName : t === H ? g.homeName : "")) || NFLN[t] || t;
@@ -1042,14 +1092,24 @@ function marketCard(id, m, g){
     if (towardHome && homeBets < 45) flag = `Most bets (${pct(100-homeBets)}) are on the ${esc(nm(A))}, but the spread moved toward the ${esc(nm(H))}. That usually means a few big bettors are on the ${esc(nm(H))}.`;
     else if (!towardHome && homeBets > 55) flag = `Most bets (${pct(homeBets)}) are on the ${esc(nm(H))}, but the spread moved toward the ${esc(nm(A))}. That usually means a few big bettors are on the ${esc(nm(A))}.`;
   }
+  /* once the game is final, mark which of the three bets cashed */
+  const fin = finalOf(id, g, A, H);
+  let rs = null, rt = null, rw = null;
+  if (fin && !isNaN(fin.a) && !isNaN(fin.h)){
+    const fm = fav ? (fav === H ? fin.h - fin.a : fin.a - fin.h) : null, tot = fin.a + fin.h;
+    if (fav) rs = fm > pts ? [1, `Cashed. The ${nm(fav)} won by ${fm}, more than the ${pts} they needed.`] : fm === pts ? [0, `Push. The ${nm(fav)} won by exactly ${pts}, so the bet is refunded.`] : [0, fm > 0 ? `Didn't cash. The ${nm(fav)} won by only ${fm}, they needed more than ${pts}.` : `Didn't cash. The ${nm(fav)} lost the game.`];
+    if (m.tot != null) rt = tot > m.tot ? [1, `Went over. The teams scored ${tot} points, more than ${m.tot}.`] : tot === m.tot ? [0, `Push. The teams scored exactly ${tot} points.`] : [0, `Went under. The teams scored ${tot} points, fewer than ${m.tot}.`];
+    if (winFav) { const w = winFav === H ? fin.h > fin.a : fin.a > fin.h; rw = w ? [1, `Cashed. The ${nm(winFav)} won the game.`] : [0, `Upset. The ${nm(winDog)} won the game.`]; }
+  }
+  const rbox = r => r ? (r[0] ? " x-hit" : "") : "", rln = r => r ? `<span class="x-res${r[0] ? "" : " miss"}">${esc(r[1])}</span>` : "";
   const wp = pA != null ? `<div class="x-wp"><span>${esc(nm(A))} ${pct(pA)}</span><div class="x-wpb"><span style="width:${pA}%"></span></div><span>${esc(nm(H))} ${pct(pH)}</span></div>` : "";
   const src = String(m.src || "").replace(/\s*\(.*?\)\s*/g, " ").trim();
   return `<article class="x-mc">
-    <div class="gtop"><span>${g?.start?etTime(g.start):""}${g?.tag?" · "+esc(g.tag):""}</span><span>${esc(nm(A))} at ${esc(nm(H))}</span></div>
+    <div class="gtop"><span>${fin ? `FINAL · ${esc(nm(A))} ${fin.a}, ${esc(nm(H))} ${fin.h}` : `${g?.start?etTime(g.start):""}${g?.tag?" · "+esc(g.tag):""}`}</span><span>${esc(nm(A))} at ${esc(nm(H))}</span></div>
     <div class="x-lines">
-      <div><small>Who's favored</small><b>${fav ? `${esc(nm(fav))} by ${pts}` : "Toss-up"}</b><em>${fav ? `They need to win by more than ${pts} points for a bet on them to win.` : "Neither team is favored."}</em></div>
-      <div><small>Expected total score</small><b>${m.tot ?? "—"} points</b><em>Both teams' scores added together. You can bet that the real total ends up over or under this number.</em></div>
-      ${winFav ? `<div><small>Chance to win the game</small><b>${esc(nm(winFav))} ${pct(Math.max(pA, pH))}</b><em>${dogML != null && dogML > 0 ? `A $100 bet on the ${esc(nm(winDog))} to win pays $${dogML} if they do.` : `The ${esc(nm(winDog))} are the underdog.`}</em></div>` : ""}
+      <div class="${rbox(rs).trim()}"><small>Who's favored</small><b>${fav ? `${esc(nm(fav))} by ${pts}` : "Toss-up"}</b><em>${fav ? `They need to win by more than ${pts} points for a bet on them to win.` : "Neither team is favored."}</em>${rln(rs)}</div>
+      <div class="${rbox(rt).trim()}"><small>Expected total score</small><b>${m.tot ?? "—"} points</b><em>Both teams' scores added together. You can bet that the real total ends up over or under this number.</em>${rln(rt)}</div>
+      ${winFav ? `<div class="${rbox(rw).trim()}"><small>Chance to win the game</small><b>${esc(nm(winFav))} ${pct(Math.max(pA, pH))}</b><em>${dogML != null && dogML > 0 ? `A $100 bet on the ${esc(nm(winDog))} to win pays $${dogML} if they do.` : `The ${esc(nm(winDog))} are the underdog.`}</em>${rln(rw)}</div>` : ""}
     </div>
     ${wp}
     <div class="x-ch"><h4>What changed since the lines opened</h4><ul>${ch.map(x => `<li>${x}</li>`).join("")}</ul></div>
@@ -1129,6 +1189,12 @@ function renderProps(box, bar, list, empty){
   db.collection("nfl_slate").onSnapshot(s => { nslate = s.docs.map(d => ({id:d.id, ...d.data()})); renderNFL(); }, () => {});
   db.collection("nfl_teams").onSnapshot(s => { nteams = map(s); renderNFL(); }, () => {});
   const dl = $("dl"); if (dl) new MutationObserver(renderNBA).observe(dl, {childList:true, characterData:true, subtree:true});
+  window.pbMktRender = () => { try {
+    const day = nbaDay(), ids = slate.filter(g => etDate(g.start) === day).sort((x, y) => x.start.localeCompare(y.start)).map(g => g.id), by = Object.fromEntries(slate.map(g => [g.id, g])), mk = ids.filter(i => market[i]);
+    if (mk.length) $("x-mkt").innerHTML = mk.map(i => marketCard(i, market[i], by[i])).join("");
+    const nb = Object.fromEntries(nslate.map(g => [g.id, g])), nk = nslate.map(g => g.id).filter(i => market[i]);
+    if (nk.length) $("xn-mkt").innerHTML = nk.map(i => marketCard(i, market[i], nb[i])).join("");
+  } catch {} };
 })();
 })();
 </script>
@@ -2005,13 +2071,14 @@ async function refresh(lg, withNews){
     s.err = null; s.at = Date.now();
   } catch (e){ s.err = e; }
   if (withNews || !s.news.length){ try { s.news = parseNews(await espn(API[lg] + "news")); } catch {} }
-  s.busy = false; render(lg);
+  s.busy = false; render(lg); if (window.pbMktRender && s.games.some(g => g.done)) pbMktRender();
   if (s.again){ s.again = false; return refresh(lg, withNews); }
   if (s.open) loadBox(lg);
   if (!s.err) loadResults(lg, withNews);
 }
 
 let lastNbaDay = nbaDay();
+window.PBLive = {final: (lg, A, H) => { const g = S[lg].games.find(x => x.done && x.away.ab === A && x.home.ab === H); const a = g && +g.away.score, h = g && +g.home.score; return g && !isNaN(a) && !isNaN(h) ? {a, h} : null; }};
 window.pbDay = lg => { const d = nbaDay(); if (lg !== "nba" || d === lastNbaDay) return; lastNbaDay = d; if (!ready) return; S.nba.games = []; S.nba.open = null; S.nba.box = null; RES.nba.items = []; RES.nba.at = 0; refresh("nba", false); };
 const activeLg = () => document.getElementById("tab-nfl")?.hidden === false ? "nfl" : "nba";
 setInterval(() => {
@@ -2590,4 +2657,6 @@ set();addEventListener("resize",set);addEventListener("load",set);if(window.Resi
 .lv-team h4 small{display:block;margin:3px 0 8px;font:500 12px/1.4 var(--body);color:var(--muted);text-transform:none;letter-spacing:0}
 </style>
 <style>.ms-sub{font:500 11.5px var(--body);color:var(--muted)}.ms-a.top{color:var(--ink);font-weight:600}</style>
+<style>.x-lines div.x-hit{background:color-mix(in srgb,var(--hit) 15%,transparent);border-bottom:0;border-radius:14px;box-shadow:inset 0 0 0 1.5px var(--hit);padding:10px 12px}.x-res{display:block;margin-top:5px;font:700 12.5px/1.35 var(--body);color:var(--hit)}.x-res.miss{color:var(--muted);font-weight:500}</style>
+<style>.ck-pick{cursor:pointer;font:inherit;color:inherit}.ck-use{font:inherit;font-weight:700;color:var(--court);background:none;border:0;text-decoration:underline;cursor:pointer;padding:0}.ck-pick:hover{border-color:var(--court)}</style>
 </body></html>
