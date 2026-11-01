@@ -276,6 +276,11 @@ footer a{color:var(--court)}
     <div class="locks" id="n-locks"></div>
   </section>
 
+  <section aria-labelledby="n-sh" style="display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:16px">
+    <h2 id="n-sh">Streaks <small>Active streaks going into this week's games: touchdowns and 100+ yard games. Counts games played this season in a row; a missed game ends the streak. Passing TDs aren't counted. Only streaks of 2 or more are shown.</small></h2>
+    <div class="stk-grid" id="n-streaks"><p class="muted">Loading…</p></div>
+  </section>
+
   <section class="lv-sec gp-sec" id="gp-nfl" data-today="1" aria-labelledby="lv-nfl-h"><h2 id="lv-nfl-h">Games &amp; props <small>This week's games with score, moneyline, total and your posted props inside each one. Tap a game for each prop’s chance to cash and the box score. Rainbow = hot streak: 20+ rushing or receiving yards in a quarter or on one play, a touchdown, 3 catches in a quarter, or a QB with 50+ passing yards in a quarter</small></h2>
     <div class="sum" id="n-sum"></div>
     <div class="lv-sec gp-live" id="lv-nfl"></div>
@@ -509,7 +514,7 @@ function row(p){
   const c = v => `<td class="num">${f1(v)}</td>`;
   return `<tr class="pl" tabindex="0" data-k="${esc(p.key)}" aria-expanded="${open===p.key}">
     <td><button class="star" data-w="${esc(p.key)}" aria-pressed="${!!watch[p.key]}" aria-label="Add ${esc(p.name)} to watchlist">★</button></td>
-    <td><span class="nm">${esc(p.name)}</span><span class="tg">${esc(p.team)}</span>${p.dvp?.length?'<span class="dvpb">DvP</span>':""}</td>
+    <td><span class="nm">${esc(p.name)}</span><span class="tg">${esc(p.team)}</span><i class="b2bs" data-t="${esc(p.team)}" data-d="${p.oppStart?etDate(p.oppStart):""}"></i>${p.dvp?.length?'<span class="dvpb">DvP</span>':""}</td>
     <td class="num">${p.gp}</td>${c(p.min)}${c(p.pts)}${c(p.reb)}${c(p.ast)}${c(p.tp)}${c(p.stl)}${c(p.blk)}${c(p.tov)}${c(p.pf)}
     <td class="num">${p.fgp==null?"—":p.fgp.toFixed(1)+"%"}</td>
     <td>${statusPill(p)}</td><td>${bestCell(p)}</td><td>${chipList(p)}</td></tr>`;
@@ -580,7 +585,7 @@ function renderLocks(){
   const top = pool.sort((a,b)=>b.bestScore-a.bestScore).slice(0,8);
   $("lkday").textContent = slateDay ? (slateDay===today ? "Tonight's slate" : new Date(slateDay+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"})+" slate") : "";
   if (!top.length){ $("locks").innerHTML = `<p class="muted">Picks appear once games are loaded.</p>`; return; }
-  $("locks").innerHTML = top.map(p => `<button class="lk" data-k="${esc(p.key)}"><span class="who">${esc(p.name)}${p.dvp.length?'<span class="dvpb">DvP</span>':""}</span><span class="tm">${esc(p.team)} vs ${esc(p.opp)} · ${f1(p.wMin)} min</span><span class="pick">${esc(p.best.l)} o${p.best.line}</span><span class="why">H2H avg ${f1(p.best.avg)} · ${p.h2hN}/${p.h2hN} vs ${esc(p.opp)}</span></button>`).join("");
+  $("locks").innerHTML = top.map(p => `<button class="lk" data-k="${esc(p.key)}"><span class="who">${esc(p.name)}${p.dvp.length?'<span class="dvpb">DvP</span>':""}</span><span class="tm">${esc(p.team)}<i class="b2bs" data-t="${esc(p.team)}" data-d="${etD(p.oppStart)}"></i> vs ${esc(p.opp)}<i class="b2bs" data-t="${esc(p.opp)}" data-d="${etD(p.oppStart)}"></i> · ${f1(p.wMin)} min</span><span class="pick">${esc(p.best.l)} o${p.best.line}</span><span class="why">H2H avg ${f1(p.best.avg)} · ${p.h2hN}/${p.h2hN} vs ${esc(p.opp)}</span></button>`).join("");
   $("locks").querySelectorAll(".lk").forEach(b => b.onclick = () => { const p = players.find(x=>x.key===b.dataset.k); st.view="all"; st.team=""; st.q=p.name; $("q").value=p.name; $("team").value=""; open=p.key; save(); render(); });
 }
 function render(){
@@ -803,6 +808,37 @@ function build(){
       players.push(r);
     }
   }
+  streaks();
+}
+/* Streaks: games in a row, newest first, this season. Walks back through the weeks the player's team actually played
+   (taken from every player's log), so a game he missed ends the streak. TD = rushing or receiving TD (passing TDs not counted). */
+function streaks(){
+  let season = ""; const W = {};
+  for (const p of players) for (const g of p.logs) if (String(g[16]) > season) season = String(g[16]);
+  for (const p of players) for (const g of p.logs) if (String(g[16]) === season) (W[g[17]] ||= new Set()).add(g[0]);
+  const run = (p, val, ok) => {
+    const by = {}; for (const g of p.logs) if (String(g[16]) === season) by[g[0]] = g;
+    const out = {n:0, vals:[]};
+    for (const w of [...(W[p.team] || [])].sort((a, b) => b - a)){ const g = by[w]; if (!g) break; const v = val(g); if (!ok(v)) break; out.n++; out.vals.push(v); }
+    return out;
+  };
+  for (const p of players) p.sk = {td:run(p, g => g[10] + g[14], v => v >= 1), ry:run(p, g => g[9], v => v >= 100), cy:run(p, g => g[13], v => v >= 100)};
+}
+const skB = p => { const o = [], s = p.sk; if (!s) return "";
+  if (s.td.n >= 2) o.push(`<span class="skb" title="Rushing or receiving TD in ${s.td.n} straight games">TD ×${s.td.n}</span>`);
+  if (s.ry.n >= 2) o.push(`<span class="skb" title="100+ rushing yards in ${s.ry.n} straight games">100 rush ×${s.ry.n}</span>`);
+  if (s.cy.n >= 2) o.push(`<span class="skb" title="100+ receiving yards in ${s.cy.n} straight games">100 rec ×${s.cy.n}</span>`);
+  return o.join(""); };
+function renderStreaks(){
+  const el = $("n-streaks"); if (!el) return;
+  const now = Date.now();
+  const cats = [["td","Touchdown streaks","games in a row with a rushing or receiving TD","TDs"],["ry","100+ rushing yards","games in a row","yards"],["cy","100+ receiving yards","games in a row","yards"]];
+  el.innerHTML = cats.map(([k, title, unit, u]) => {
+    const xs = players.filter(p => p.sk && p.sk[k].n >= 2 && p.opp && p.status !== "out").sort((a, b) => b.sk[k].n - a.sk[k].n || (b.fp || 0) - (a.fp || 0)).slice(0, 12);
+    const body = xs.length ? xs.map(p => { const s = p.sk[k], started = p.start && Date.parse(p.start) < now;
+      const when = p.start ? new Date(p.start).toLocaleString("en-US", {timeZone:"America/New_York", weekday:"short", hour:"numeric", minute:"2-digit"}) + " ET" : "";
+      return `<div class="stk-p"><div class="stk-n">${esc(p.name)} <small>${esc(p.pos)} · ${esc(p.team)} ${vs(p)}</small></div><div class="stk-s"><b>${s.n}</b> straight${p.injS ? ` · <span class="stk-w">${esc(p.injS)}</span>` : ""}</div><div class="stk-sub">${u} by game, newest first: ${s.vals.join(", ")} · ${started ? "game started" : esc(when)}</div></div>`; }).join("") : `<p class="muted">No active streaks of 2+ games.</p>`;
+    return `<div class="stk-c"><h3>${title} <small>${unit}</small></h3>${body}</div>`; }).join("");
 }
 function filtered(){
   const q = st.q.trim().toLowerCase();
@@ -832,7 +868,7 @@ function row(p){
     `<span class="chips">${p.l5.slice(0,3).map(x=>`<span class="chip">${esc(x.l)} ${x.line}+</span>`).join("")}${p.l5.length>3?`<span class="chip more">+${p.l5.length-3}</span>`:""}</span>`;
   return `<tr class="pl" tabindex="0" data-k="${esc(p.key)}" aria-expanded="${open===p.key}">
     <td><button class="star" data-w="${esc(p.key)}" aria-pressed="${!!watch[p.key]}" aria-label="Add ${esc(p.name)} to watchlist">★</button></td>
-    <td><span class="nm">${esc(p.name)}</span><span class="tg">${esc(p.pos)} · ${esc(p.team)} ${vs(p)}</span>${p.dvp.length?'<span class="dvpb">DvP</span>':""}</td>
+    <td><span class="nm">${esc(p.name)}</span><span class="tg">${esc(p.pos)} · ${esc(p.team)} ${vs(p)}</span>${p.dvp.length?'<span class="dvpb">DvP</span>':""}${skB(p)}</td>
     <td class="num">${p.gp}</td>${c(p.pyd,qb)}${c(p.ptd,qb)}${c(p.ryd)}${c(p.rec,!qb)}${c(p.recyd,!qb)}${c(p.tgt,!qb)}${c(p.tds)}${c(p.fp)}
     <td>${pill(p)}</td><td>${p.best?`<span class="best">${esc(p.best.l)} over ${p.best.line}</span>`:'<span class="muted">—</span>'}</td><td>${chips}</td></tr>`;
 }
@@ -889,7 +925,7 @@ function renderLocks(){
     .sort((a,b)=>b.bestScore-a.bestScore);
   let qbs = 0; const top8 = []; for (const p of top){ if (p.pos==="QB"){ if (qbs>=3) continue; qbs++; } top8.push(p); if (top8.length===8) break; }
   top.length = 0; top.push(...top8);
-  $("n-locks").innerHTML = top.length ? top.map(p => `<button class="lk" data-k="${esc(p.key)}"><span class="who">${esc(p.name)}${p.dvp.length?'<span class="dvpb">DvP</span>':""}</span><span class="tm">${esc(p.pos)} · ${esc(p.team)} ${vs(p)}${p.injS?" · "+esc(p.injS):""}</span><span class="pick">${esc(p.best.l)} o${p.best.line}</span><span class="why">avg ${f1(p.best.avg)} · ${Math.min(5,p.gp)}/${Math.min(5,p.gp)} last ${Math.min(5,p.gp)}</span></button>`).join("") : `<p class="muted">Picks appear once game logs load.</p>`;
+  $("n-locks").innerHTML = top.length ? top.map(p => `<button class="lk" data-k="${esc(p.key)}"><span class="who">${esc(p.name)}${p.dvp.length?'<span class="dvpb">DvP</span>':""}${skB(p)}</span><span class="tm">${esc(p.pos)} · ${esc(p.team)} ${vs(p)}${p.injS?" · "+esc(p.injS):""}</span><span class="pick">${esc(p.best.l)} o${p.best.line}</span><span class="why">avg ${f1(p.best.avg)} · ${Math.min(5,p.gp)}/${Math.min(5,p.gp)} last ${Math.min(5,p.gp)}</span></button>`).join("") : `<p class="muted">Picks appear once game logs load.</p>`;
   $("n-locks").querySelectorAll(".lk").forEach(b => b.onclick = () => { const p = players.find(x=>x.key===b.dataset.k); st.view="all"; st.team=""; st.pos=""; st.q=p.name; $("n-q").value=p.name; open=p.key; save(); render(); $("n-rows").scrollIntoView({block:"start"}); });
 }
 function renderSlate(){
@@ -924,6 +960,7 @@ function render(){
   $("n-views").innerHTML = VIEWS.map(v => `<button data-v="${v.id}" aria-pressed="${st.view===v.id}">${esc(v.l)} <span class="n">${counts[v.id]}</span></button>`).join("");
   $("n-views").querySelectorAll("button").forEach(b => b.onclick = () => { st.view=b.dataset.v; save(); render(); });
   renderLocks();
+  renderStreaks();
   const tms = [...new Set(players.map(p=>p.team))].sort();
   if ($("n-team").options.length !== tms.length+1) $("n-team").innerHTML = `<option value="">All teams</option>` + tms.map(t=>`<option>${t}</option>`).join("");
   $("n-team").value = st.team; $("n-pos").value = st.pos;
@@ -1255,7 +1292,7 @@ chips.className = "jchips"; chips.setAttribute("aria-label", "Jump to section");
 bar.appendChild(chips);
 
 const LABEL = {"lv-nba-h":"Games &amp; props","lv-nfl-h":"Games &amp; props","x-mkt-h":"Game odds","x-props-h":"Book props",lh:"Best props",dh:"DvP","x-inj-h":"Injuries",
-  "xn-mkt-h":"Game odds","xn-props-h":"Book props","n-lh":"Best props","n-dh":"DvP","xn-inj-h":"Injuries"};
+  "xn-mkt-h":"Game odds","xn-props-h":"Book props","n-lh":"Best props","n-sh":"Streaks","n-dh":"DvP","xn-inj-h":"Injuries"};
 let collapsed = {};
 try { collapsed = JSON.parse(localStorage.getItem("pb-collapsed") || "{}") || {}; } catch {}
 // First visit with this layout: start the secondary sections collapsed (DvP, injuries). The Show button opens them and the choice is remembered.
@@ -1814,7 +1851,7 @@ function gameUnit(lg, g, it, hasDoc){
   const live = g.state === "in", started = g.state !== "pre";
   const aw = +g.away.score, hw = +g.home.score;
   const sl = slateFor(lg, g);
-  const team = (t, lose, mlv) => `<div class="${lose?"lose":""}"><span>${esc(t.ab)}<small>${esc(t.rec)}${mlv != null ? ` · <b>${mlTxt(mlv)}</b>` : ""}</small></span><span>${started?esc(t.score):""}</span></div>`;
+  const team = (t, lose, mlv) => `<div class="${lose?"lose":""}"><span>${esc(t.ab)}${lg === "nba" ? `<i class="b2bs" data-t="${esc(t.ab)}" data-d="${etDay(g.start)}"></i>` : ""}<small>${esc(t.rec)}${mlv != null ? ` · <b>${mlTxt(mlv)}</b>` : ""}</small></span><span>${started?esc(t.score):""}</span></div>`;
   let pc = "", body = "";
   if (it && !it.err){
     const done = !!it.done, f = gameFrac(lg, it.g), st = f > 0 || done;
@@ -2468,7 +2505,7 @@ function build(){
     const sl = lg === "nba" ? D.slate : D.nfl_slate, out = []; let skipped = 0;
     for (const [id, doc] of Object.entries(D.props || {})){
       if (!doc || doc.lg !== lg || !sl || !sl[id] || sl[id].status !== "scheduled") continue;
-      for (const row of doc.rows || []){ let r; try { r = evaluate(lg, id, sl[id], row); } catch (e) { r = {skip:1}; } if (r.skip) skipped++; else out.push({...r, asof: doc.asof, wk: sl[id].week}); }
+      for (const row of doc.rows || []){ let r; try { r = evaluate(lg, id, sl[id], row); } catch (e) { r = {skip:1}; } if (r.skip) skipped++; else out.push({...r, lg, asof: doc.asof, wk: sl[id].week}); }
     }
     RES[lg] = out; SKIP[lg] = skipped;
     const days = daysOf(lg); if (!days.includes(ST[lg].day)) ST[lg].day = lg === "nfl" && days.includes(String(wkNow)) ? String(wkNow) : days[0] || "";
@@ -2487,7 +2524,7 @@ function card(r){
   const cls = r.side === "OVER" ? "o" : "u";
   const projLine = `Projection ${f1(r.mu0)} season → ${f1(r.mu)} after form, matchup, workload and injuries (line ${r.line}).`;
   return `<article class="pe-c ${cls}">
-    <div class="pe-top"><div><span class="nm">${esc(r.name)}</span><span class="tg">${esc(r.team)}</span><span class="pe-g">vs ${esc(r.opp)} · ${r.start ? etTime(r.start) : ""}</span></div>
+    <div class="pe-top"><div><span class="nm">${esc(r.name)}</span><span class="tg">${esc(r.team)}</span>${r.lg === "nba" ? `<i class="b2bs" data-t="${esc(r.team)}" data-d="${etDay(r.start)}"></i>` : ""}<span class="pe-g">vs ${esc(r.opp)}${r.lg === "nba" ? `<i class="b2bs" data-t="${esc(r.opp)}" data-d="${etDay(r.start)}"></i>` : ""} · ${r.start ? etTime(r.start) : ""}</span></div>
       <div class="pe-sc" title="Edge score: 50 = no edge, higher = bigger gap between the model and the price"><b>${r.score}</b><small>score</small></div></div>
     <div class="pe-pick"><span class="sd">${r.side}</span><b>${r.line}</b> ${esc(r.label)}<span class="od">${ml(r.price)}</span><span class="sr">${esc(r.src || "")}</span></div>
     <div class="pe-sum">Model <b>${Math.round(r.pSide * 100)}%</b> vs price <b>${Math.round(r.pmSide * 100)}%</b> · edge <b>${r.edge > 0 ? "+" : ""}${f1(r.edge)} pts</b> · EV <b>${r.ev >= 0 ? "+" : ""}${f1(r.ev * 100)}%</b> per $1</div>
@@ -2980,11 +3017,32 @@ document.addEventListener("keydown", e => {
 });
 
 /* ---------- boot ---------- */
-const boot = debounce(() => { skeletons(); decorateStars(); applyAll(); gameTops("nba"); gameTops("nfl"); sheet(); }, 50);
+/* ---------- (B2B): a team that also played the previous ET night. Built from slate.json ids YYYY-MM-DD-AWAY-HOME. ---------- */
+const NBAFIX = {NY: "NYK", SA: "SAS", GS: "GSW", NO: "NOP", UTAH: "UTA", WSH: "WAS"};
+let PLAYED = null;
+const prevDay = d => { const x = new Date(d + "T12:00:00Z"); x.setUTCDate(x.getUTCDate() - 1); return x.toISOString().slice(0, 10); };
+async function loadPlayed(){
+  try {
+    const j = await fetch("slate.json?t=" + Date.now(), {cache: "no-store"}).then(r => r.json()), m = {};
+    for (const id of Object.keys(j)) { const q = /^(\d{4}-\d{2}-\d{2})-([A-Z]+)-([A-Z]+)$/.exec(id); if (q) (m[q[1]] ||= new Set()).add(q[2]).add(q[3]); }
+    PLAYED = m; fillB2B();
+  } catch {}
+}
+function fillB2B(){
+  if (!PLAYED) return;
+  document.querySelectorAll("i.b2bs").forEach(el => {
+    const t = NBAFIX[el.dataset.t] || el.dataset.t, d = el.dataset.d, y = d && PLAYED[prevDay(d)];
+    const on = !!(y && y.has(t)), txt = on ? " (B2B)" : "";
+    if (el.textContent !== txt) { el.textContent = txt; el.title = on ? "Played last night: second game in two nights" : ""; }
+  });
+}
+loadPlayed(); setInterval(loadPlayed, 600000);
+const boot = debounce(() => { skeletons(); fillB2B(); decorateStars(); applyAll(); gameTops("nba"); gameTops("nfl"); sheet(); }, 50);
 ["locks", "n-locks", "pe-nba", "pe-nfl", "rows", "n-rows", "lv-nba", "lv-nfl"].forEach(id => watch($(id), boot));
 // Edge Finder sections are created later by another script; watch the panels for them too.
 document.querySelectorAll(".tabp").forEach(p => new MutationObserver(debounce(() => { ["pe-nba", "pe-nfl"].forEach(id => { const el = $(id); if (el && !el.dataset.w) { el.dataset.w = 1; watch(el, boot); boot(); } }); }, 100)).observe(p, {childList: true}));
 boot(); deepLink();
 })();
 </script>
+<style>.b2bs{font-style:normal;font-weight:700;color:var(--warn);font-size:.85em;white-space:nowrap}.skb{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;font:700 11px var(--mono);background:color-mix(in srgb,var(--court) 18%,transparent);color:var(--court);white-space:nowrap}.stk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}.stk-c{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0}.stk-c h3{margin:0;font-family:var(--display);font-weight:800;font-size:17px;text-transform:uppercase;letter-spacing:.04em}.stk-c h3 small{display:block;font:400 12px var(--body);text-transform:none;letter-spacing:0;color:var(--muted)}.stk-p{border-top:1px solid var(--line);padding-top:7px}.stk-n{font-weight:700}.stk-n small{font:500 11.5px var(--mono);color:var(--muted)}.stk-s{font:600 13px var(--body);color:var(--court)}.stk-s b{font-size:18px}.stk-w{color:var(--warn)}.stk-sub{font:500 11.5px var(--mono);color:var(--muted)}</style>
 </body></html>
