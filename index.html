@@ -47,6 +47,7 @@
 .x-pl .x-src{margin-left:auto}
 .x-tag{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:1px 6px;border-radius:4px}
 .x-tag.o{background:var(--hit-soft);color:var(--hit)}.x-tag.u{background:var(--miss-soft);color:var(--miss)}
+.x-tag.hit{background:var(--hit);color:#000}.x-tag.miss{background:var(--miss);color:#000}.x-tag.p{background:var(--warn);color:#000}
 .x-rts{display:flex;flex-wrap:wrap;gap:6px}
 .x-rt{font-family:var(--mono);font-size:11.5px;padding:3px 7px;border-radius:4px;background:var(--bg);display:inline-flex;gap:5px;align-items:baseline}
 .x-rt b{font-size:12.5px}.x-rt small{color:var(--muted)}
@@ -1062,11 +1063,18 @@ function propCard(lg, row, gid){
   }
   const j = judge(parts, over);
   const ip = imp(over);
+  /* once the game is final: did the trend's side cash? (over trend = over won, under trend = under won) */
+  let resTag = "";
+  const gr = j.tag && window.PBLive && PBLive.grade ? PBLive.grade(lg, gid, team, name, key) : null;
+  if (gr){
+    const L = key === "td" ? 0.5 : line, push = gr.v === L, won = j.cls === "o" ? gr.v > L : gr.v < L;
+    resTag = `<span class="x-tag ${push ? "p" : won ? "hit" : "miss"}" title="Final: ${esc(gr.v)} vs a line of ${key === "td" ? "1 TD" : esc(line)}">${push ? "Push" : won ? "Cashed" : "Missed"}</span>`;
+  }
   const lineTxt = key === "td" ? "Scores a TD" : `Over ${line}`;
   const edgeTxt = j.r != null && ip != null ? `<span class="x-edge ${j.edge > 0 ? "pos" : "neg"}" title="Combined hit rate minus the over price's implied chance">${j.edge > 0 ? "+" : ""}${Math.round(j.edge*100)} pts vs price</span>` : "";
   return { score: j.r == null ? -1 : Math.abs(j.r - .5) + (j.edge != null ? Math.abs(j.edge) * .5 : 0),
     html: `<div class="x-pc ${j.cls}">
-      <div class="x-pt"><span class="nm">${esc(name)}</span><span class="tg">${esc(team)}</span>${j.tag?`<span class="x-tag ${j.cls}">${j.tag}</span>`:""}</div>
+      <div class="x-pt"><span class="nm">${esc(name)}</span><span class="tg">${esc(team)}</span>${j.tag?`<span class="x-tag ${j.cls}">${j.tag}</span>`:""}${resTag}</div>
       <div class="x-pl"><b>${esc(S.l)}</b> ${esc(lineTxt)} <span class="x-odds">${over!=null?ml(over):""}${under!=null?` / U ${ml(under)}`:""}</span><span class="x-src">${esc(src)}</span></div>
       ${mvTxt}
       <div class="x-rts">${html}</div>
@@ -1228,6 +1236,7 @@ function renderProps(box, bar, list, empty){
   db.collection("nfl_slate").onSnapshot(s => { nslate = s.docs.map(d => ({id:d.id, ...d.data()})); renderNFL(); }, () => {});
   db.collection("nfl_teams").onSnapshot(s => { nteams = map(s); renderNFL(); }, () => {});
   const dl = $("dl"); if (dl) new MutationObserver(renderNBA).observe(dl, {childList:true, characterData:true, subtree:true});
+  window.pbPropsRender = () => { try { renderNBA(); renderNFL(); } catch {} };
   window.pbMktRender = () => { try {
     const day = nbaDay(), ids = slate.filter(g => etDate(g.start) === day).sort((x, y) => x.start.localeCompare(y.start)).map(g => g.id), by = Object.fromEntries(slate.map(g => [g.id, g])), mk = ids.filter(i => market[i]);
     if (mk.length) $("x-mkt").innerHTML = mk.map(i => marketCard(i, market[i], by[i])).join("");
@@ -1688,6 +1697,7 @@ async function loadResults(lg, force){
   R.busy = false;
   if (tag !== (lg === "nba" ? nbaDay() : String(S.nfl.week))) return loadResults(lg, true);
   R.items = items; R.tried = true; R.at = Date.now(); render(lg);
+  if (window.pbPropsRender && items.some(x => x.done)) pbPropsRender();
 }
 /* ---------- Hot-streak detector (rainbow props) ----------
    Reads ESPN play-by-play and flags a player when any of these happen:
@@ -2119,7 +2129,7 @@ async function refresh(lg, withNews){
 }
 
 let lastNbaDay = nbaDay();
-window.PBLive = {final: (lg, A, H) => { const g = S[lg].games.find(x => x.done && x.away.ab === A && x.home.ab === H); const a = g && +g.away.score, h = g && +g.home.score; return g && !isNaN(a) && !isNaN(h) ? {a, h} : null; }};
+window.PBLive = {grade: (lg, gid, team, name, key) => { const it = RES[lg].items.find(x => x.id === gid && x.done) || Object.values(resCache).find(x => x && x.id === gid && x.done); const r = it && (it.rows || []).find(r => r.team === team && r.key === key && norm(r.name) === norm(name)); return r && r.v != null ? {v: r.v} : null; }, final: (lg, A, H) => { const g = S[lg].games.find(x => x.done && x.away.ab === A && x.home.ab === H); const a = g && +g.away.score, h = g && +g.home.score; return g && !isNaN(a) && !isNaN(h) ? {a, h} : null; }};
 window.pbDay = lg => { const d = nbaDay(); if (lg !== "nba" || d === lastNbaDay) return; lastNbaDay = d; if (!ready) return; S.nba.games = []; S.nba.open = null; S.nba.box = null; RES.nba.items = []; RES.nba.at = 0; refresh("nba", false); };
 const activeLg = () => document.getElementById("tab-nfl")?.hidden === false ? "nfl" : "nba";
 setInterval(() => {
