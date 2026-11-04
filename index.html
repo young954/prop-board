@@ -1589,7 +1589,7 @@ function errText(e){
 function parseBoard(lg, j){
   return (j.events||[]).map(ev => {
     const c = ev.competitions?.[0] || {}, st = c.status || ev.status || {};
-    const side = h => { const x = (c.competitors||[]).find(k => k.homeAway === h) || {}; return {ab:TEAM(lg, x.team?.abbreviation), name:x.team?.shortDisplayName||"", score:x.score, rec:x.records?.[0]?.summary||"", lines:(x.linescores||[]).map(l=>l.displayValue)}; };
+    const side = h => { const x = (c.competitors||[]).find(k => k.homeAway === h) || {}; return {ab:TEAM(lg, x.team?.abbreviation), id:x.team?.id, name:x.team?.shortDisplayName||"", score:x.score, rec:x.records?.[0]?.summary||"", lines:(x.linescores||[]).map(l=>l.displayValue)}; };
     const o = c.odds?.[0];
     return {id:ev.id, start:ev.date, period:st.period||0, clock:st.displayClock||"", state:st.type?.state, done:!!st.type?.completed, detail:st.type?.shortDetail||st.type?.detail||"",
       away:side("away"), home:side("home"), tv:(c.broadcasts?.[0]?.names||[]).join(", "),
@@ -1942,7 +1942,7 @@ async function loadMs(lg, g){
     const disp = {}; for (const t of box.teams) for (const cc of t.cats) for (const r of cc.rows) disp[norm(r.n)] = r.n;
     const hs = lg === "nba" ? hotStreaks(j) : hotStreaksNfl(j), hot = [];
     for (const [n, f] of Object.entries(hs)) for (const v of Object.values(f)) hot.push({n:disp[n] || n, t:v.t});
-    Object.assign(x, {at:Date.now(), done:!!g.done, hot}); x.ms = await careerMs(lg, g, box).catch(() => x.ms || []); x.cdone = true; x.busy = false;
+    Object.assign(x, {at:Date.now(), done:!!g.done, hot, pre:false}); x.ms = await careerMs(lg, g, box).catch(() => x.ms || []); x.cdone = true; x.busy = false;
     return true;
   } catch { x.busy = false; x.at = Date.now(); return false; }
 }
@@ -2015,6 +2015,57 @@ async function careerMs(lg, g, box){
   }
   return out;
 }
+/* ---------- Pre-game milestones: who is within reach of a career number before tip-off / kickoff ----------
+   Candidates: players with posted props for the game (else the first roster players). Career totals via careerOf. */
+const ROSTER = {};
+async function rosterOf(lg, id){
+  if (ROSTER[lg + id]) return ROSTER[lg + id];
+  const j = await espn(`${API[lg]}teams/${id}/roster`), out = [];
+  for (const a of j.athletes || []){ if (a.items) out.push(...a.items); else out.push(a); }
+  return (ROSTER[lg + id] = out.map(a => ({id:a.id, n:a.displayName || a.fullName || "", pos:a.position?.abbreviation || ""})).filter(a => a.id && a.n));
+}
+async function loadPre(lg, g){
+  const c = MS[lg + g.id];
+  if (c && (c.busy || Date.now() - c.at < 3 * 3600e3)) return false;
+  const x = (MS[lg + g.id] ||= {at:0, ms:[], hot:[], done:false}); x.busy = true;
+  try {
+    const d = todayDocs(lg).find(y => y.g.id === g.id), want = new Set(d ? (d.doc.rows || []).map(r => norm(r[1])) : []);
+    const spec = CAREER_SPEC[lg], cand = [];
+    for (const side of [g.away, g.home]){
+      if (!side.id) continue;
+      let ros = await rosterOf(lg, side.id);
+      if (lg === "nfl") ros = ros.filter(p => /^(RB|WR|TE|FB)$/.test(p.pos));
+      let pick = ros.filter(p => want.has(norm(p.n)));
+      if (pick.length < 4) pick = ros.slice(0, lg === "nba" ? 10 : 12);
+      for (const p of pick.slice(0, 16)) cand.push({...p, t:side.ab});
+    }
+    await pool(cand, 6, p => careerOf(lg, p.id).then(v => { p.car = v; }));
+    const out = [];
+    for (const p of cand){
+      if (!p.car) continue;
+      for (const [k, plural, one, step, near, paths] of spec){
+        let career = 0, ok = true; for (const path of paths){ if (p.car[path] == null) ok = false; career += p.car[path] || 0; }
+        if (!ok) continue;
+        const T = (Math.floor(career / step) + 1) * step, need = T - career;
+        if (need > near) continue;
+        out.push({n:p.n, t:p.t, k, l:plural, one, crossed:false, T, tonight:0, after:career, need, tier:0, top:false, pre:true, txt:`${p.n} is ${fmtN(need)} ${need === 1 ? one : plural} from ${fmtN(T)} career`});
+      }
+    }
+    Object.assign(x, {at:Date.now(), done:false, pre:true, ms:out, cdone:true, busy:false});
+    return true;
+  } catch { x.busy = false; x.at = Date.now(); return false; }
+}
+function watchBlock(lg){
+  const xs = [];
+  for (const g of S[lg].games){ const c = MS[lg + g.id]; if (!c || !c.pre || g.state !== "pre") continue; for (const m of c.ms) xs.push({...m, g}); }
+  if (!xs.length) return "";
+  xs.sort((a, b) => a.need / (CAREER_SPEC[lg].find(s => s[0] === a.k)[4]) - b.need / (CAREER_SPEC[lg].find(s => s[0] === b.k)[4]) || a.g.start.localeCompare(b.g.start));
+  const tm = g => new Date(g.start).toLocaleString("en-US", {timeZone:"America/New_York", weekday:"short", hour:"numeric", minute:"2-digit"}) + " ET";
+  const body = xs.slice(0, 18).map(m => `<div class="ms-p"><div class="ms-n">${esc(m.n)} <small>${esc(m.t)} · ${esc(m.g.away.ab)} @ ${esc(m.g.home.ab)} · ${esc(tm(m.g))}</small></div>
+      <div class="ms-s"><span class="ms-a"><b>${fmtN(m.need)}</b> ${esc(m.need === 1 ? m.one : m.l)} away from <b>${fmtN(m.T)}</b> career ${esc(m.l)}</span></div>
+      <div class="ms-sub">${fmtN(m.after)} career so far</div></div>`).join("");
+  return `<div class="lv-team"><h4>Milestones to watch <small>Players close to a big career number before the game starts. Career totals are regular season and can be a game behind. Check the injury report: a player who sits can't reach it.</small></h4><div class="ms-list">${body}</div></div>`;
+}
 function msBlock(lg, g){
   const c = MS[lg + g.id]; if (!c || !c.cdone) return "";
   const nmT = t => (t === g.away ? g.awayName : t === g.home ? g.homeName : "") || (typeof NFLN !== "undefined" && NFLN[t]) || t;
@@ -2024,8 +2075,8 @@ function msBlock(lg, g){
     const w = m.after === 1 ? m.one : m.l;
     return `<div class="ms-p${m.crossed ? " top" : ""}"><div class="ms-n">${esc(m.n)} <small>${esc(nmT(m.t))}</small></div>
       <div class="ms-s"><span class="ms-a${m.crossed ? " top" : ""}">${m.crossed ? `Just reached <b>${fmtN(m.T)}</b> career ${esc(m.l)}` : `<b>${fmtN(m.need)}</b> ${esc(m.need === 1 ? m.one : m.l)} away from <b>${fmtN(m.T)}</b> career ${esc(m.l)}`}</span></div>
-      <div class="ms-sub">${m.tonight} ${esc(m.tonight === 1 ? m.one : m.l)} in this game · ${fmtN(m.after)} career</div></div>`;
-  }).join("") : `<p class="muted">No one has reached or come close to a career milestone in this game.</p>`;
+      <div class="ms-sub">${m.pre ? `${fmtN(m.after)} career so far` : `${m.tonight} ${esc(m.tonight === 1 ? m.one : m.l)} in this game · ${fmtN(m.after)} career`}</div></div>`;
+  }).join("") : `<p class="muted">${c.pre ? "No one is within reach of a career milestone in this game." : "No one has reached or come close to a career milestone in this game."}</p>`;
   return `<div class="lv-team"><h4>Career milestones <small>${sub}</small></h4><div class="ms-list">${body}</div></div>`;
 }
 function tkItems(){
@@ -2033,9 +2084,9 @@ function tkItems(){
   for (const lg of ["nba", "nfl"]){
     const LG = lg.toUpperCase(), s = S[lg], lab = g => `${g.away.ab} @ ${g.home.ab}`;
     for (const g of s.games){
-      const c = MS[lg + g.id]; if (!c) continue; const live = g.state === "in", st = live ? "LIVE" : "FINAL";
+      const c = MS[lg + g.id]; if (!c) continue; const live = g.state === "in", pre = g.state === "pre", st = live ? "LIVE" : pre ? "UP NEXT" : "FINAL";
       for (const h of c.hot) out.push({w:live ? 0 : 3, cls:"rb", lg:LG, tag:"HOT", txt:`${h.n} · ${h.t}`, sub:`${lab(g)} · ${st}`});
-      for (const m of c.ms) out.push({w:(live ? 1 : 4) + (m.top ? -0.5 : 0.5) - m.tier / 20, cls:m.top ? "top" : "", lg:LG, tag:m.crossed ? "MILESTONE" : "CLOSE", txt:m.txt, sub:`${lab(g)} · ${st}`});
+      for (const m of c.ms) out.push({w:(live ? 1 : pre ? 5 : 4) + (m.top ? -0.5 : 0.5) - m.tier / 20, cls:m.top ? "top" : "", lg:LG, tag:m.crossed ? "MILESTONE" : "CLOSE", txt:m.txt, sub:`${lab(g)} · ${st}`});
     }
     for (const it of RES[lg].items){
       if (!it.rows) continue; const f = gameFrac(lg, it.g), done = !!it.done;
@@ -2072,6 +2123,11 @@ async function tkTick(){
       const gs = s.games.filter(g => g.state === "in" || (g.done && now - Date.parse(g.start) < 3 * 86400e3)).sort((a, b) => b.start.localeCompare(a.start)).slice(0, 10);
       let fresh = false;
       for (const g of gs) if (await loadMs(lg, g)) fresh = true;
+      /* pre-game career milestones: next games only, 3 loads per tick */
+      let nPre = 0;
+      for (const g of s.games.filter(g => g.state === "pre" && Date.parse(g.start) - now < (lg === "nfl" ? 72 : 36) * 3600e3).sort((a, b) => a.start.localeCompare(b.start)).slice(0, 10)){
+        if (nPre >= 3) break; if (await loadPre(lg, g)){ fresh = true; nPre++; }
+      }
       if (fresh) render(lg);
     }
   } catch {}
@@ -2095,6 +2151,7 @@ function render(lg){
       <button type="button" id="lv-ref-${lg}">Refresh</button></div>
     ${e?`<div class="lv-msg">${esc(e.t)}${e.allow?` <button class="lv-allow" type="button" id="lv-allow-${lg}">Allow live data</button>`:""}</div>`:""}
     ${lg === "nfl" ? `<div class="wk-nav"><button type="button" id="wk-prev" aria-label="Previous week" ${s.week <= 1 ? "disabled" : ""}>‹</button><span class="wk-l">Week ${s.week || "—"}${s.week && s.curWeek === s.week ? " · this week" : ""}</span><button type="button" id="wk-next" aria-label="Next week" ${s.week >= 18 ? "disabled" : ""}>›</button></div>` : ""}
+    ${watchBlock(lg)}
     <div class="lv-list">${s.games.length ? s.games.map(g => gameUnit(lg, g, items[g.id], !!docs[g.id])).join("") : (s.at ? `<p class="muted">${lg === "nba" ? "No games on the ESPN scoreboard for this day." : "No games on the ESPN scoreboard for this week."}</p>` : "")}</div>
     ${s.news.length ? `<h3 style="margin:4px 0 0;font-family:var(--display);font-weight:800;font-size:17px;text-transform:uppercase;letter-spacing:.04em">Latest ${lg.toUpperCase()} news</h3><div class="lv-news">${s.news.map(n => `<a class="lv-n" href="${esc(n.url)}" target="_blank" rel="noopener"><b>${esc(n.h)}</b>${n.d?`<span>${esc(n.d)}</span>`:""}<small>ESPN · ${n.at?new Date(n.at).toLocaleString("en-US",{timeZone:"America/New_York",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):""}</small></a>`).join("")}</div>` : ""}`;
   $(`lv-ref-${lg}`).onclick = () => refresh(lg, true);
