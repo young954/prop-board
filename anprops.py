@@ -12,6 +12,7 @@ import urllib.parse
 
 BASE = "https://api.actionnetwork.com/web/v2/scoreboard/{lg}/markets?{q}"
 BOOKS = [(68, "DraftKings"), (69, "FanDuel"), (75, "BetMGM"), (123, "Caesars"), (15, "Action Network consensus")]
+SHORT = {68: "DK", 69: "FD", 75: "MGM", 123: "CZR"}  # books shown for line shopping (consensus is not a book you can bet at)
 OPEN = 30  # Action Network's "Open" book: the opening line
 HEADERS = {"Origin": "https://www.actionnetwork.com", "Referer": "https://www.actionnetwork.com/"}
 
@@ -39,8 +40,10 @@ def url_for(lg, query):
 def pull(lg, query, get, include_done=False):
     """Returns ({(away, home): {(team, name, stat): row}}, {book label: row count}).
 
-    Each row is [team, name, stat, line, over odds, under odds, book, open line, open over, open under];
-    the three "open" cells are None when the opening line isn't available.
+    Each row is [team, name, stat, line, over odds, under odds, book, open line, open over, open under, books];
+    the three "open" cells are None when the opening line isn't available. `books` is the line-shopping list:
+    [[DK/FD/MGM/CZR, line, over odds, under odds], ...] for every real book with a full price (a TD has line 0.5,
+    "yes" odds and None); it is [] when only the consensus line exists.
     `get(url, headers=...)` fetches and parses JSON (raises on failure)."""
     j = get(url_for(lg, query), headers=HEADERS)
     fix, types = TEAM_FIX[lg], TYPES[lg]
@@ -107,6 +110,16 @@ def pull(lg, query, get, include_done=False):
                 first = [0.5, op["yes"], None]
         elif "over" in op and "under" in op and op["over"][0] == op["under"][0]:
             first = [op["over"][0], op["over"][1], op["under"][1]]
-        rows.setdefault((away, home), {})[(team, name, stat)] = [team, name, stat, line, oo, uo, label] + first
+        shop = []
+        for b, short in SHORT.items():
+            d = by.get(b)
+            if not d:
+                continue
+            if stat == "td":
+                if "yes" in d:
+                    shop.append([short, 0.5, d["yes"], None])
+            elif "over" in d and "under" in d and d["over"][0] == d["under"][0]:
+                shop.append([short, d["over"][0], d["over"][1], d["under"][1]])
+        rows.setdefault((away, home), {})[(team, name, stat)] = [team, name, stat, line, oo, uo, label] + first + [shop]
         used[label] = used.get(label, 0) + 1
     return rows, used
