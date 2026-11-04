@@ -2123,16 +2123,28 @@ async function tkTick(){
       const gs = s.games.filter(g => g.state === "in" || (g.done && now - Date.parse(g.start) < 3 * 86400e3)).sort((a, b) => b.start.localeCompare(a.start)).slice(0, 10);
       let fresh = false;
       for (const g of gs) if (await loadMs(lg, g)) fresh = true;
-      /* pre-game career milestones: next games only, 3 loads per tick */
-      let nPre = 0;
-      for (const g of s.games.filter(g => g.state === "pre" && Date.parse(g.start) - now < (lg === "nfl" ? 72 : 36) * 3600e3).sort((a, b) => a.start.localeCompare(b.start)).slice(0, 10)){
-        if (nPre >= 3) break; if (await loadPre(lg, g)){ fresh = true; nPre++; }
-      }
       if (fresh) render(lg);
     }
   } catch {}
   tkBusy = false; tkRender();
 }
+/* pre-game career milestones run on their own timer so the heavy live/finished-game loads never block them */
+let preBusy = false;
+async function preTick(){
+  if (!ready || preBusy || document.hidden) return;
+  preBusy = true;
+  try {
+    for (const lg of ["nba", "nfl"]){
+      const now = Date.now(); let n = 0;
+      for (const g of S[lg].games.filter(g => g.state === "pre" && Date.parse(g.start) - now < (lg === "nfl" ? 72 : 36) * 3600e3).sort((a, b) => a.start.localeCompare(b.start)).slice(0, 10)){
+        if (n >= 3) break;
+        if (await loadPre(lg, g)){ n++; render(lg); tkRender(); }
+      }
+    }
+  } catch {}
+  preBusy = false;
+}
+setInterval(preTick, 20000); setTimeout(preTick, 4000);
 setInterval(tkTick, 60000);
 setTimeout(tkTick, 3000);
 setTimeout(tkRender, 500);
