@@ -47,6 +47,8 @@
 .x-pl .x-src{margin-left:auto}
 .x-tag{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:1px 6px;border-radius:4px}
 .x-tag.o{background:var(--hit-soft);color:var(--hit)}.x-tag.u{background:var(--miss-soft);color:var(--miss)}
+.x-shop{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.x-shl{flex:1 0 100%;font:600 11px var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.x-bk{font:500 12px var(--mono);padding:3px 8px;border-radius:8px;background:var(--panel2);border:1px solid var(--line);white-space:nowrap}.x-bk b{color:var(--ink)}.x-bk.best{border-color:var(--court);box-shadow:inset 0 0 0 1px var(--court)}.x-bk em{font-style:normal;font-weight:700;color:var(--court);margin-left:6px;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em}.x-shop small{flex:1 0 100%;color:var(--muted);font:400 11.5px var(--body)}
 .x-tag.hit{background:var(--hit);color:#000}.x-tag.miss{background:var(--miss);color:#000}.x-tag.p{background:var(--warn);color:#000}
 .x-rts{display:flex;flex-wrap:wrap;gap:6px}
 .x-rt{font-family:var(--mono);font-size:11.5px;padding:3px 7px;border-radius:4px;background:var(--bg);display:inline-flex;gap:5px;align-items:baseline}
@@ -1035,7 +1037,7 @@ function judge(parts, over){
 }
 
 function propCard(lg, row, gid){
-  const [team, name, key, line, over, under, src, oLine, oOver, oUnder] = row;
+  const [team, name, key, line, over, under, src, oLine, oOver, oUnder, books] = row;
   const S = (lg === "nba" ? NBA : NFL)[key] || {l:key, f:()=>0};
   const mvTxt = (() => {
     if (oLine == null) return "";
@@ -1063,6 +1065,22 @@ function propCard(lg, row, gid){
   }
   const j = judge(parts, over);
   const ip = imp(over);
+  /* line shopping: every book that posts this prop, with the best over / best under marked.
+     books = [[DK|FD|MGM|CZR, line, over odds, under odds], ...]. Best over = lowest line, then best price; best under = highest line, then best price. */
+  const shop = (() => {
+    if (!Array.isArray(books) || books.length < 2) return "";
+    const td = key === "td";
+    let bo = null, bu = null;
+    for (const b of books){
+      if (bo == null || b[1] < bo[1] || (b[1] === bo[1] && b[2] > bo[2])) bo = b;
+      if (!td && b[3] != null && (bu == null || b[1] > bu[1] || (b[1] === bu[1] && b[3] > bu[3]))) bu = b;
+    }
+    const lines = books.map(b => b[1]), spread = Math.max(...lines) - Math.min(...lines), same = !td && bo === bu;
+    const chip = b => { const tags = [b === bo ? (td ? "best price" : "best over") : "", b === bu && b !== bo ? "best under" : "", b === bu && b === bo && !td ? "best under" : ""].filter(Boolean);
+      return `<span class="x-bk${tags.length ? " best" : ""}"><b>${esc(b[0])}</b> ${td ? ml(b[2]) : `o${b[1]} ${ml(b[2])}${b[3] != null ? ` / u ${ml(b[3])}` : ""}`}${tags.length ? `<em>${tags.join(" · ")}</em>` : ""}</span>`; };
+    const note = td ? "" : spread > 0 ? `Lines differ by ${Math.round(spread * 10) / 10}. ` : "Same line at every book. ";
+    return `<div class="x-shop"><span class="x-shl">Line shopping · ${books.length} books</span>${books.map(chip).join("")}${note ? `<small>${note}Compare before you bet.</small>` : ""}</div>`;
+  })();
   /* once the game is final: did the trend's side cash? (over trend = over won, under trend = under won) */
   let resTag = "";
   const gr = j.tag && window.PBLive && PBLive.grade ? PBLive.grade(lg, gid, team, name, key) : null;
@@ -1077,6 +1095,7 @@ function propCard(lg, row, gid){
       <div class="x-pt"><span class="nm">${esc(name)}</span><span class="tg">${esc(team)}</span>${j.tag?`<span class="x-tag ${j.cls}">${j.tag}</span>`:""}${resTag}</div>
       <div class="x-pl"><b>${esc(S.l)}</b> ${esc(lineTxt)} <span class="x-odds">${over!=null?ml(over):""}${under!=null?` / U ${ml(under)}`:""}</span><span class="x-src">${esc(src)}</span></div>
       ${mvTxt}
+      ${shop}
       <div class="x-rts">${html}</div>
       ${ip!=null||edgeTxt?`<div class="x-ip">${ip!=null?`Price implies ${pct(ip*100)}`:""}${edgeTxt}</div>`:""}
     </div>`};
