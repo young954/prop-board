@@ -448,7 +448,7 @@ def main():
             for key, r in new.items():
                 prev = old_rows.get(key)
                 if r[7] is None:  # no opening line from the feed: keep the first line seen
-                    r = r[:7] + (prev[7:10] if prev and len(prev) >= 10 and prev[7] is not None else [r[3], r[4], r[5]])
+                    r = r[:7] + (prev[7:10] if prev and len(prev) >= 10 and prev[7] is not None else [r[3], r[4], r[5]]) + r[10:]
                 out.append(r)
             for key, prev in old_rows.items():
                 if key not in new:
