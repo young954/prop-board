@@ -1476,6 +1476,8 @@ build();
 .lv-u .sc .lose{color:var(--muted)}
 .lv-u .pc{font:600 11px var(--mono);color:var(--muted);text-align:right;line-height:1.4;display:flex;align-items:center;gap:8px}
 .lv-u .pc b{color:var(--hit)}.lv-u .pc i{font-style:normal;color:var(--court)}
+.lv-u .pc b.hr{font-weight:800}.lv-u .pc b.hr.a{color:var(--warn)}.lv-u .pc b.hr.r{color:var(--miss)}
+.lv-u .pc .hm{display:block;width:100%;min-width:90px;height:6px;margin-top:4px;border-radius:999px;background:var(--line);overflow:hidden}.lv-u .pc .hm i{display:block;height:100%;border-radius:999px;background:var(--hit)}.lv-u .pc .hm i.a{background:var(--warn)}.lv-u .pc .hm i.r{background:var(--miss)}
 .lv-u .pc::after{content:"▸";font-size:12px;color:var(--muted)}
 .lv-u[open] .pc::after{content:"▾"}
 .lv-u .mt{grid-column:1/-1;font:11px var(--mono);color:var(--muted);display:flex;flex-wrap:wrap;gap:1px 10px}
@@ -1887,7 +1889,9 @@ function gameUnit(lg, g, it, hasDoc){
     const rows = it.rows.map(r => ({...r, p: cashChance(lg, r, f, done), proj: f > 0 && !done ? r.v / f : null}));
     const cnt = xs => { const c = xs.filter(r => r.v > r.line).length, p = xs.filter(r => !(r.v > r.line) && r.p >= .5 && !done).length; return {c, p, n:xs.length}; };
     const k = cnt(rows);
-    pc = rows.length ? `<span>${st ? `<b>${k.c}</b>/${k.n} cashed` : `${k.n} props`}${done ? "" : `<br><i>${k.p}</i> ${st ? "on pace" : "favored"}`}</span>` : `<span>No matches</span>`;
+    /* final: hit rate with a meter (green 50%+, amber 35-49%, red under 35%) */
+    const hr = done && k.n ? Math.round(k.c / k.n * 100) : null, hc = hr == null ? "" : hr >= 50 ? "g" : hr >= 35 ? "a" : "r";
+    pc = rows.length ? `<span>${st ? `<b>${k.c}</b>/${k.n} cashed` : `${k.n} props`}${done ? (hr != null ? ` · <b class="hr ${hc}">${hr}%</b><span class="hm" role="img" aria-label="${hr}% of props cashed"><i class="${hc}" style="width:${hr}%"></i></span>` : "") : `<br><i>${k.p}</i> ${st ? "on pace" : "favored"}`}</span>` : `<span>No matches</span>`;
     const card = r => {
       const hit = r.v > r.line, hs = !hit && !done ? hotFor(r) : [];
       const cls = (hit ? "hit" : done ? "miss" : st && r.p >= .5 ? "pace" : "") + (hs.length ? " rb" : "");
