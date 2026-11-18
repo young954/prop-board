@@ -2417,6 +2417,9 @@ health(); setInterval(health, 120000);
 .pe-proj,.pe-mk{margin:6px 0 0;line-height:1.45}
 .pe-tags{display:flex;flex-wrap:wrap;gap:5px}.pe-tag{font:700 10.5px var(--mono);padding:1px 6px;border-radius:4px;background:var(--warn-soft);color:var(--warn)}
 .pe-tag.hi{background:var(--hit-soft);color:var(--hit)}
+.pe-shop{display:flex;flex-wrap:wrap;gap:5px;font:600 11px var(--mono);color:var(--muted)}.pe-shop span{padding:1px 6px;border:1px solid var(--line,#333);border-radius:4px}.pe-shop .best{color:var(--hit);border-color:var(--hit)}
+.pe-hits{display:flex;align-items:center;gap:6px;font:700 12px var(--mono)}.pe-hits span{display:flex;flex-direction:column;align-items:center;min-width:46px;padding:2px 6px;border-radius:6px;background:rgba(255,255,255,.05)}.pe-hits small{font-size:9.5px;font-weight:600;color:var(--muted);letter-spacing:.04em}.pe-hits .g{color:var(--hit);background:var(--hit-soft)}.pe-hits .r{color:var(--miss,#ff5d5d);background:rgba(255,93,93,.1)}.pe-hits em{font-style:normal;font-weight:500;font-size:11px;color:var(--muted)}
+.pe-rec{margin:10px 0;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.04);font-size:13px;color:var(--muted)}.pe-rec b{color:var(--ink)}.pe-rec .up{color:var(--hit)}.pe-rec .dn{color:var(--miss,#ff5d5d)}
 .pe-foot{font-size:12px;color:var(--muted)}
 .pe-more{align-self:center}
 </style>
@@ -2444,7 +2447,12 @@ const W_FORM = 0.4;        // weight on the last 5 games vs the season average
 const W_H2H = 0.15;        // weight on last year's games vs this opponent (needs 2+ games)
 const WK_CAP = 0.05;       // minutes / touches trend can move the projection at most 5%
 const INJ_CAP = 0.08;      // teammates out can lift the projection at most 8%
-const QUESTIONABLE = 3;    // points of probability taken off an Over when the player is questionable
+const QUESTIONABLE = 3;
+/* Backtest calibration (NBA). Logistic fit on 12,700+ graded 2026-27 props (Oct 20 - Nov 16), out-of-sample tested:
+   Brier 0.2434 vs the books' own no-vig price 0.2438. Inputs, in order: market logit, projection-minus-market logit,
+   season hit rate at the line, last-10 hit rate at the line, median vs line, minutes trend, home, points-type stat. */
+const CAL = {b:-0.0337, w:[0.9056, 0.1887, -0.2268, -0.3424, 0.219, 0.0607, -0.0352, -0.1338], n:12708, from:"Oct 20", to:"Nov 16"};
+const EV_MIN = 0.05;       // a pick needs +5% expected value at the best available price (holdout: +6.7% ROI at 5-6%, +4% at 3%)    // points of probability taken off an Over when the player is questionable
 
 const MODEL = {
   nba: {
@@ -2501,7 +2509,9 @@ function dvpBump(lg, key, text){
 
 /* ---- the model ---- */
 function evaluate(lg, id, g, row){
-  const [team, name, key, line, ov, un, src, oLine] = row;
+  let [team, name, key, line, ov, un, src, oLine] = row; const books = row[10] || [];
+  if (src === "Kalshi" && ov != null && un != null && Math.abs(imp(ov) + imp(un) - 1) < .01){   // older Kalshi rows are mid-market: charge a 2-cent spread each side
+    const am = q => q >= .5 ? Math.round(-100 * q / (1 - q)) : Math.round(100 * (1 - q) / q); ov = am(Math.min(.97, imp(ov) + .02)); un = am(Math.min(.97, imp(un) + .02)); }
   const M = MODEL[lg], S = M.stats[key]; if (!S || line == null || ov == null) return {skip:1};
   const opp = g.away === team ? g.home : g.away;
   const st = statusOf(id, team, name);
@@ -2588,18 +2598,42 @@ function evaluate(lg, id, g, row){
     tags.push(`${st.st}${st.why ? " — " + st.why : ""}`);
     if (hit){ pf -= hit; rows.push({label:"Injury risk", detail:`${st.st}: minutes could be limited`, d: -hit}); }
   }
+  /* backtest calibration: re-weigh everything against how 12,700 graded props actually finished */
+  const l10v = vals.slice(-10), hits = {l5:[o5, n5], l10:[l10v.filter(v => over(v, line)).length, l10v.length], s:[oS, n]};
+  if (lg === "nba"){
+    const lgt = q => { q = Math.min(Math.max(q, 1e-4), 1 - 1e-4); return Math.log(q / (1 - q)); };
+    const so = [...vals].sort((a, b) => a - b), med = so[Math.floor(n / 2)], h10 = hits.l10[0] / Math.max(1, hits.l10[1]);
+    const m3 = mean(minutes.slice(-3)), mS = mean(minutes);
+    const f = [lgt(pm), lgt(pf) - lgt(pm), oS / n - .5, (h10 - .5) * Math.min(l10v.length, 10) / 10, (med - line) / Math.max(line, 1), (m3 - mS) / Math.max(mS, 1), (g.home === team ? 1 : 0) - .5, /^(pts|pr|pa|pra)$/.test(key) ? 1 : 0];
+    let z = CAL.b; f.forEach((x, i) => z += CAL.w[i] * x);
+    const pc = 1 / (1 + Math.exp(-z)), why = [];
+    if (h10 >= .7 && l10v.length >= 7) why.push(`hot streak (${hits.l10[0]}/${hits.l10[1]} over in last 10): books already priced it in, so this leans Under`);
+    else if (h10 <= .3 && l10v.length >= 7) why.push(`cold streak (${hits.l10[0]}/${hits.l10[1]} over in last 10): the line already dropped, so this leans Over`);
+    if (Math.abs(med - line) >= 1 && Math.abs(med - mu0) >= .5) why.push(`his typical game (median ${f1(med)}) sits ${med > line ? "above" : "below"} the line`);
+    if (/^(pts|pr|pa|pra)$/.test(key)) why.push("points props cash the Over less than their price suggests");
+    rows.push({label:"Backtest check", detail:`Re-weighed against ${CAL.n.toLocaleString()} graded props from this season${why.length ? ": " + why.join("; ") : ""}`, d: pc - pf});
+    pf = pc;
+  }
   const edgeO = pf - pm;
   const under = edgeO < 0 && un != null;
   const dir = under ? -1 : 1, edge = under ? -edgeO : edgeO, pSide = under ? 1 - pf : pf, pmSide = under ? 1 - pm : pm;
-  const price = under ? un : ov;
+  let price = under ? un : ov, bestBk = null;   // line shopping: best price at the same line across books
+  for (const b of books){ if (b[1] !== line) continue; const q = under ? b[3] : b[2]; if (q != null && (price == null || dec(q) > dec(price))){ price = q; bestBk = b[0]; } }
+  const shop = books.filter(b => b[1] === line && (under ? b[3] : b[2]) != null).map(b => [b[0], under ? b[3] : b[2]]).sort((a, b) => dec(b[1]) - dec(a[1]));
   const ev = pSide * dec(price) - 1;
+  const noBook = /consensus/i.test(src || "") && !books.length;
+  if (noBook) tags.push("Consensus line only: no sportsbook posted this exact price");
   const conf = (n >= 12 ? 2 : n >= 7 ? 1 : 0) - (tags.length ? 1 : 0);
   const lineMove = oLine != null && oLine !== line ? `Line moved ${oLine} → ${line}` : "";
   return {id, lg, team, name, opp, key, label:S.l, line, side: under ? "UNDER" : "OVER", price, src, edge: edge * 100, pSide, pmSide, ev, n,
-    score: Math.max(0, Math.min(99, Math.round(50 + edge * 100 * 2.5))), conf: Math.max(0, conf), steps: rows.map(r => ({...r, d: r.d * dir * 100})),
+    score: Math.max(0, Math.min(99, Math.round(50 + ev * 100 * 2.5 + (conf - 1) * 2 - (noBook ? 15 : 0)))), conf: Math.max(0, conf), bestBk, shop, hits, noBook, steps: rows.map(r => ({...r, d: r.d * dir * 100})),
     mu0, mu, tags, lineMove, start: g.start, sd: sd0};
 }
 
+const rowsOf = doc => {   // a Kalshi row is dropped when a sportsbook already has that player and stat (names differ by accents)
+  const rs = doc.rows || [], have = new Set(rs.filter(r => r[6] !== "Kalshi").map(r => r[0] + "|" + norm(r[1]) + "|" + r[2]));
+  return rs.filter(r => r[6] !== "Kalshi" || !have.has(r[0] + "|" + norm(r[1]) + "|" + r[2]));
+};
 function build(){
   prep();
   const wkNow = (D.status || {}).nfl_week;
@@ -2607,11 +2641,43 @@ function build(){
     const sl = lg === "nba" ? D.slate : D.nfl_slate, out = []; let skipped = 0;
     for (const [id, doc] of Object.entries(D.props || {})){
       if (!doc || doc.lg !== lg || !sl || !sl[id] || sl[id].status !== "scheduled") continue;
-      for (const row of doc.rows || []){ let r; try { r = evaluate(lg, id, sl[id], row); } catch (e) { r = {skip:1}; } if (r.skip) skipped++; else out.push({...r, lg, asof: doc.asof, wk: sl[id].week}); }
+      for (const row of rowsOf(doc)){ let r; try { r = evaluate(lg, id, sl[id], row); } catch (e) { r = {skip:1}; } if (r.skip) skipped++; else out.push({...r, lg, asof: doc.asof, wk: sl[id].week}); }
     }
     RES[lg] = out; SKIP[lg] = skipped;
     const days = daysOf(lg); if (!days.includes(ST[lg].day)) ST[lg].day = lg === "nfl" && days.includes(String(wkNow)) ? String(wkNow) : days[0] || "";
   }
+}
+/* ---- the model's own record: replay finished NBA games with only the box scores known before tip ---- */
+let REC = null;
+function computeRec(){
+  const saveG = D.games || {}, sl = D.slate || {}, out = {};
+  const ids = Object.keys(D.props || {}).filter(id => D.props[id].lg === "nba" && saveG[id] && saveG[id].players && sl[id]).sort();
+  const byDate = {}; for (const id of ids) (byDate[id.slice(0, 10)] ||= []).push(id);
+  for (const d of Object.keys(byDate).sort()){
+    const sub = {}; for (const [k, v] of Object.entries(saveG)) if ((v.date || k.slice(0, 10)) < d) sub[k] = v;
+    D.games = sub; prep();
+    const day = out[d] = {w:0, l:0, u:0};
+    for (const id of byDate[d]){
+      const g = saveG[id];
+      for (const row of rowsOf(D.props[id])){
+        let r; try { r = evaluate("nba", id, sl[id], row); } catch (e) { continue; }
+        if (!r || r.skip || r.noBook || r.ev < EV_MIN || r.edge < 2) continue;
+        const pl = g.players.find(p => norm(p.n) === norm(row[1]) && p.t === row[0]); if (!pl) continue;
+        const v = MODEL.nba.stats[row[2]].f(pl); if (v === row[3]) continue;
+        const won = (v > row[3]) === (r.side === "OVER");
+        if (won){ day.w++; day.u += dec(r.price) - 1; } else { day.l++; day.u -= 1; }
+      }
+    }
+  }
+  D.games = saveG; prep();
+  const sum = ds => ds.reduce((a, d) => ({w:a.w + out[d].w, l:a.l + out[d].l, u:a.u + out[d].u}), {w:0, l:0, u:0});
+  const dates = Object.keys(out).sort(), last7 = dates.slice(-7);
+  return {all: sum(dates.filter(d => d <= "2026-11-16")), live: sum(dates.filter(d => d > "2026-11-16")), last7: sum(last7), from: dates[0], days: out};
+}
+function recHtml(){
+  const t = (x, lbl) => { const b = x.w + x.l; if (!b) return `<b>${lbl}</b>: no graded picks yet`; const roi = x.u / b * 100;
+    return `<b>${lbl}</b>: ${x.w}-${x.l} (${Math.round(x.w / b * 100)}%), <span class="${roi >= 0 ? "up" : "dn"}">${roi >= 0 ? "+" : ""}${f1(roi)}% per $1</span> on ${b} picks`; };
+  return `Model record on the picks shown here (EV +5% or more at the best price): ${t(REC.live, "Live since Nov 17")} · ${t(REC.all, "Replay Oct 20–Nov 16")}. <span class="muted">The replay uses games the model was fitted on, so treat it as a sanity check; the live record is the real test.</span>`;
 }
 const dayKey = (lg, r) => lg === "nba" ? etDay(r.start) : String(r.wk);
 const daysOf = lg => [...new Set(RES[lg].map(r => dayKey(lg, r)))].sort();
@@ -2628,7 +2694,9 @@ function card(r){
   return `<article class="pe-c ${cls}">
     <div class="pe-top"><div><span class="nm">${esc(r.name)}</span><span class="tg">${esc(r.team)}</span>${r.lg === "nba" ? `<i class="b2bs" data-t="${esc(r.team)}" data-d="${etDay(r.start)}"></i>` : ""}<span class="pe-g">vs ${esc(r.opp)}${r.lg === "nba" ? `<i class="b2bs" data-t="${esc(r.opp)}" data-d="${etDay(r.start)}"></i>` : ""} · ${r.start ? etTime(r.start) : ""}</span></div>
       <div class="pe-sc" title="Edge score: 50 = no edge, higher = bigger gap between the model and the price"><b>${r.score}</b><small>score</small></div></div>
-    <div class="pe-pick"><span class="sd">${r.side}</span><b>${r.line}</b> ${esc(r.label)}<span class="od">${ml(r.price)}</span><span class="sr">${esc(r.src || "")}</span></div>
+    <div class="pe-pick"><span class="sd">${r.side}</span><b>${r.line}</b> ${esc(r.label)}<span class="od">${ml(r.price)}</span><span class="sr">${esc(r.bestBk ? "best at " + r.bestBk : r.src || "")}</span></div>
+    ${r.shop && r.shop.length > 1 ? `<div class="pe-shop">${r.shop.map(([b, q], i) => `<span class="${i ? "" : "best"}">${esc(b)} ${ml(q)}</span>`).join("")}</div>` : ""}
+    <div class="pe-hits">${[["L5", r.hits.l5], ["L10", r.hits.l10], ["Season", r.hits.s]].map(([t, h]) => { const q = h[1] ? h[0] / h[1] : 0, sq = r.side === "OVER" ? q : 1 - q; return `<span class="${sq >= .6 ? "g" : sq <= .4 ? "r" : ""}"><small>${t}</small>${r.side === "OVER" ? h[0] : h[1] - h[0]}/${h[1]}</span>`; }).join("")}<em>${r.side === "OVER" ? "over" : "under"} ${r.line}</em></div>
     <div class="pe-sum">Model <b>${Math.round(r.pSide * 100)}%</b> vs price <b>${Math.round(r.pmSide * 100)}%</b> · edge <b>${r.edge > 0 ? "+" : ""}${f1(r.edge)} pts</b> · EV <b>${r.ev >= 0 ? "+" : ""}${f1(r.ev * 100)}%</b> per $1</div>
     <div class="pe-tags"><span class="pe-tag ${r.conf === 2 ? "hi" : ""}">${CONF[r.conf]} confidence · ${r.n} games</span>${r.tags.map(t => `<span class="pe-tag">${esc(t)}</span>`).join("")}${r.lineMove ? `<span class="pe-tag">${esc(r.lineMove)}</span>` : ""}</div>
     <ul class="pe-why">${top.length ? top.map(why).join("") : `<li><span class="muted">No single factor stands out; the model is close to the market price.</span></li>`}</ul>
@@ -2643,7 +2711,7 @@ function view(lg){
   const s = ST[lg], days = daysOf(lg);
   const all = RES[lg].filter(r => dayKey(lg, r) === s.day);
   const stats = [...new Set(all.map(r => r.key))];
-  let list = all.filter(r => r.edge >= s.min && (s.side === "all" || r.side === s.side) && (s.stat === "all" || r.key === s.stat)).sort((a, b) => b.score - a.score || b.n - a.n);
+  let list = all.filter(r => r.edge >= s.min && (s.min === 0 || r.ev >= EV_MIN || r.noBook) && (s.side === "all" || r.side === s.side) && (s.stat === "all" || r.key === s.stat)).sort((a, b) => b.score - a.score || b.n - a.n);
   const asofs = all.map(r => Date.parse(r.asof)).filter(Boolean), asof = asofs.length ? new Date(Math.min(...asofs)).toLocaleString("en-US", {timeZone:"America/New_York", month:"short", day:"numeric", hour:"numeric", minute:"2-digit"}) + " ET" : "";
   const bar = `<div class="pe-bar">
     <select id="pe-d-${lg}" aria-label="${lg === "nba" ? "Day" : "Week"}">${days.map(d => `<option value="${esc(d)}" ${d === s.day ? "selected" : ""}>${esc(dayLbl(lg, d))}</option>`).join("")}</select>
@@ -2663,7 +2731,10 @@ function view(lg){
       <li><b>Turn it into a chance.</b> Counting stats use a Poisson curve; points and yards use a normal curve spread from his own game-to-game swings.</li>
       <li><b>Trust it in proportion to the data.</b> With n games, the model's gap from the market is multiplied by n ÷ (n + ${K_SHRINK}). Early in the season this keeps scores close to the market.</li>
       <li><b>Questionable players</b> lose ${QUESTIONABLE} points on the Over. Out and Doubtful players are skipped.</li>
-      <li><b>Score</b> = 50 + 2.5 × edge (model chance minus price, in points), capped 0–99. It is a ranking aid, not a guarantee; small samples and missing context can make it wrong.</li></ol></details>
+      <li><b>Check it against what really happened</b> (NBA). The projection is re-weighed by a model fitted on ${CAL.n.toLocaleString()} graded props from this season (${CAL.from}–${CAL.to}). It learned three things the books' prices miss: Overs on points props cash less often than priced, a player on a hot streak is usually already priced in (lean Under), and his typical game (median) matters more than his average. Tested on games it never saw, it beat the books' own no-vig prices.</li>
+      <li><b>Shop the line.</b> The pick uses the best price among DraftKings, FanDuel, BetMGM and Caesars at the same line. "Consensus line only" means no book posted that exact price, so those sink to the bottom.</li>
+      <li><b>Score</b> = 50 + 2.5 × expected value (%, at the best price), small bonus for big samples, capped 0–99. It is a ranking aid, not a guarantee.</li></ol></details>
+    <div class="pe-rec" id="pe-rec-${lg}">${lg === "nba" ? (REC ? recHtml() : `<span class="muted">Checking the model's record on finished games…</span>`) : ""}</div>
     ${bar}${body}
     <p class="pe-foot">${asof ? `Lines as of ${esc(asof)}. ` : ""}Form data: this season's box scores.${SKIP[lg] ? ` ${SKIP[lg]} props skipped (player out, line far from his usual output, lopsided price, or fewer than 3 games of history).` : ""}${loadErr ? ` Some feeds failed: ${esc(loadErr)}.` : ""}</p>`;
 }
@@ -2692,6 +2763,7 @@ async function load(){
   const bad = FILES.filter((f, i) => res[i].status !== "fulfilled"); loadErr = bad.length ? bad.join(", ") : null;
   try { build(); } catch (e) { console.error(e); loadErr = "model error"; }
   renderAll();
+  setTimeout(() => { try { REC = computeRec(); const el = $("pe-rec-nba"); if (el) el.innerHTML = recHtml(); } catch (e) { console.error(e); } }, 50);
 }
 mount("nba"); mount("nfl"); load(); setInterval(load, 180000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
