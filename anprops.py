@@ -30,11 +30,42 @@ TEAM_FIX = {"nba": {"SA": "SAS", "NO": "NOP", "GS": "GSW", "WSH": "WAS", "NY": "
             "nfl": {"JAC": "JAX", "WSH": "WAS", "LAR": "LA"}}
 
 
-def url_for(lg, query):
+def url_for(lg, query, types=None):
+    """types: the customPickTypes to ask for. Since Nov 10, 2026 the API answers 400 when a request
+    names more than one, so pull() asks for one stat type per request and merges the answers."""
     ids = [b for b, _ in BOOKS] + [OPEN]
-    q = {"bookIds": ",".join(str(i) for i in ids), "customPickTypes": ",".join(TYPES[lg])}
+    q = {"bookIds": ",".join(str(i) for i in ids), "customPickTypes": ",".join(types or TYPES[lg])}
     q.update(query)
     return BASE.format(lg=lg, q=urllib.parse.urlencode(q, safe=","))
+
+
+def fetch(lg, query, get):
+    """One request per stat type, merged into a single response shaped like the old multi-type one.
+    Raises only if every request failed (a single failing stat type is skipped)."""
+    merged = {"games": [], "players": [], "markets": {}}
+    seen_g, seen_p, ok, last_err = set(), set(), 0, None
+    for typ in TYPES[lg]:
+        try:
+            j = get(url_for(lg, query, [typ]), headers=HEADERS)
+        except Exception as e:  # keep going: one stat type failing shouldn't blank the rest
+            last_err = e
+            continue
+        ok += 1
+        for g in j.get("games") or []:
+            if g.get("id") not in seen_g:
+                seen_g.add(g.get("id"))
+                merged["games"].append(g)
+        for pl in j.get("players") or []:
+            if pl.get("id") not in seen_p:
+                seen_p.add(pl.get("id"))
+                merged["players"].append(pl)
+        for book, m in (j.get("markets") or {}).items():
+            ev = merged["markets"].setdefault(book, {}).setdefault("event", {})
+            for t, outs in ((m or {}).get("event") or {}).items():
+                ev.setdefault(t, []).extend(outs or [])
+    if not ok:
+        raise last_err or RuntimeError("no Action Network stat type loaded")
+    return merged
 
 
 def pull(lg, query, get, include_done=False):
@@ -45,7 +76,7 @@ def pull(lg, query, get, include_done=False):
     [[DK/FD/MGM/CZR, line, over odds, under odds], ...] for every real book with a full price (a TD has line 0.5,
     "yes" odds and None); it is [] when only the consensus line exists.
     `get(url, headers=...)` fetches and parses JSON (raises on failure)."""
-    j = get(url_for(lg, query), headers=HEADERS)
+    j = fetch(lg, query, get)
     fix, types = TEAM_FIX[lg], TYPES[lg]
     ab = lambda t: fix.get(t.get("abbr"), t.get("abbr"))
     ev, teams = {}, {}
