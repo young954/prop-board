@@ -29,6 +29,22 @@ slate, lines, injuries, Action Network and Kalshi props, head-to-head vs this we
 
 No JSON contracts changed. The page reads the existing `status.json` `errors` list.
 
+## Edge Finder model (Nov 17, 2026 upgrade)
+
+- **Backtested calibration (NBA).** The projection is re-weighed by a logistic model fitted on 12,708 graded props
+  from this season (Oct 20 - Nov 16): market price, projection gap, season and last-10 hit rate at the line, median vs line,
+  minutes trend, home, points-type stat. Out of sample (trained to Nov 7, tested Nov 8-16) it beat the books' own no-vig
+  price (Brier 0.2434 vs 0.2438) and is well calibrated. What it learned: Overs cash ~47% at real books, hot streaks are
+  already priced in (lean Under), and the median game matters more than the average. Coefficients: `CAL` in index.html.
+- **Line shopping.** Each pick uses the best price at the same line among DK/FD/MGM/CZR and lists every book.
+- **Hit-rate strip** on every card: L5 / L10 / Season at the posted line, for the side picked.
+- **Model record** above the cards: picks with EV +5% or more, graded on finished games using only box scores known before tip
+  (live since Nov 17, plus an in-sample replay).
+- **Honest prices.** Consensus-only lines (no book posted the price) sink to the bottom. Kalshi rows now use tradable prices
+  (ask / 1 - bid) instead of the mid, and a Kalshi row is dropped when a sportsbook already lists that player and stat
+  (names are matched without accents, e.g. Dončić = Doncic).
+- Refit `CAL` every few weeks as more games are graded. NFL still uses the projection model without the backtest step.
+
 ### Not done yet / trade-offs
 - Multi-book line shopping view (needs per-book prices in `props.json`).
 - Filters for position (NBA), home/away, rest days and hit-rate window need those fields on the player objects.

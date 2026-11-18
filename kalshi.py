@@ -7,6 +7,7 @@ prices become over/under odds (American). Rows use the same 10-cell format as an
 book = "Kalshi". Team props: full-game totals (KXNBATOTAL) come back as `totals`.
 """
 import re
+import unicodedata
 
 BASE = "https://api.elections.kalshi.com/trade-api/v2/markets?series_ticker={s}&status=open&limit=1000"
 SERIES = {
@@ -34,14 +35,27 @@ def _pages(get, series, limit_pages=5):
     return out
 
 
-def _mid(m):
+def _quote(m):
+    """(bid, ask) for the Yes side, or None when there is no real two-sided market on this rung."""
     try:
         b, a = float(m["yes_bid_dollars"]), float(m["yes_ask_dollars"])
     except (KeyError, ValueError, TypeError):
         return None
     if a <= 0 or b >= 1 or a < b or a - b > 0.15:
-        return None  # no real two-sided market on this rung
-    return (a + b) / 2
+        return None
+    return b, a
+
+
+def _mid(m):
+    q = _quote(m)
+    return None if q is None else (q[0] + q[1]) / 2
+
+
+def _key(name):
+    """Name key that matches across sources: accents, punctuation and Jr/Sr/II/III removed."""
+    n = unicodedata.normalize("NFKD", name or "").encode("ascii", "ignore").decode().lower()
+    n = re.sub(r"[^a-z ]", "", n)
+    return " ".join(w for w in n.split() if w not in ("jr", "sr", "ii", "iii", "iv"))
 
 
 def _teams(lg, event_ticker):
@@ -63,24 +77,25 @@ def pull(lg, get):
                 if m.get("status") not in ("active", "open"):
                     continue
                 g = _teams(lg, m.get("event_ticker", ""))
-                p = _mid(m)
+                q = _quote(m)
                 name = (m.get("yes_sub_title") or "").split(":")[0].strip()
                 strike = m.get("floor_strike")
-                if not g or p is None or not name or strike is None:
+                if not g or q is None or not name or strike is None:
                     continue
                 seg = m["ticker"].split("-")[2] if m["ticker"].count("-") >= 3 else ""
                 team = next((t for t in g if seg.startswith(t)), None)
                 if not team:
                     continue
-                ladders.setdefault((g, team, name, stat), []).append((strike, p))
+                ladders.setdefault((g, team, name, stat), []).append((strike, q))
         except Exception as e:  # one series failing shouldn't lose the others
             errors.append("Kalshi %s: %s" % (series, e))
     rows = {}
     for (g, team, name, stat), rungs in ladders.items():
-        strike, p = min(rungs, key=lambda r: abs(r[1] - 0.5))
-        if not 0.2 <= p <= 0.8:
+        strike, (bid, ask) = min(rungs, key=lambda r: abs((r[1][0] + r[1][1]) / 2 - 0.5))
+        if not 0.2 <= (bid + ask) / 2 <= 0.8:
             continue
-        rows.setdefault(g, {})[(team, name, stat)] = [team, name, stat, strike, american(p), american(1 - p),
+        # prices you can actually trade: buy Yes at the ask (Over), buy No at 1 - bid (Under)
+        rows.setdefault(g, {})[(team, name, stat)] = [team, name, stat, strike, american(ask), american(1 - bid),
                                                        "Kalshi", None, None, None]
     totals = {}
     if lg in TOTAL:
@@ -105,8 +120,9 @@ def merge(lg, by_game, get):
     added = 0
     for g, d in rows.items():
         cur = by_game.setdefault(g, {})
+        have = {(t, _key(n), st) for (t, n, st) in cur}
         for k, r in d.items():
-            if k not in cur:
+            if k not in cur and (k[0], _key(k[1]), k[2]) not in have:
                 cur[k] = r
                 added += 1
     return by_game, added, totals, errors
