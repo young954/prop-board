@@ -3284,15 +3284,82 @@ async function copyText(t){
     document.body.appendChild(ta); ta.select(); let ok = false; try { ok = document.execCommand("copy"); } catch (_) {} ta.remove(); return ok; }
 }
 function flash(btn, msg){ const was = btn.dataset.lbl || btn.textContent; btn.dataset.lbl = was; btn.textContent = msg; btn.classList.add("ok"); clearTimeout(btn._t); btn._t = setTimeout(() => { btn.textContent = was; btn.classList.remove("ok"); }, 1600); }
+/* Share = a picture of the parlay (PNG) via the phone's share menu. Images are made right after the cards draw,
+   so the share menu opens instantly on tap (iPhone blocks it if the tap and the menu are too far apart). */
+const IMG = {};
+const C = {bg:"#050604", panel:"#12130f", line:"#272a21", ink:"#f5f6ef", muted:"#9a9e8e", lime:"#c6f20c", miss:"#ff4d3d", orange:"#ffa31a"};
+const F = (w, px, mono) => `${w} ${px}px ${mono ? '"JetBrains Mono",ui-monospace,Menlo,monospace' : '"Plus Jakarta Sans",-apple-system,system-ui,sans-serif'}`;
+function wrap(x, text, maxW){ const out = []; let line = "";
+  for (const w of String(text).split(" ")) { const t = line ? line + " " + w : w; if (x.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t; }
+  if (line) out.push(line); return out; }
+function rr(x, X, Y, W, H, r){ x.beginPath(); x.roundRect ? x.roundRect(X, Y, W, H, r) : x.rect(X, Y, W, H); }
+function drawParlay(P, measureOnly, cv){
+  const W = 1080, PAD = 64, IN = W - PAD * 2, x = (cv || document.createElement("canvas")).getContext("2d");
+  const res = P.res || "open", ops = []; let y = PAD;
+  const txt = (t, X, Y, font, color, align) => ops.push(() => { x.font = font; x.fillStyle = color; x.textAlign = align || "left"; x.fillText(t, X, Y); });
+  // header
+  const hy = y; ops.push(() => { x.fillStyle = C.lime; rr(x, PAD, hy, 250, 60, 30); x.fill(); });
+  txt("PROP BOARD", PAD + 125, y + 41, F(800, 26), "#050604", "center");
+  txt("Parlay Lab · " + dayLbl(DAY), W - PAD, y + 41, F(600, 28, 1), C.muted, "right");
+  y += 60 + 64;
+  txt(P.name, PAD, y, F(800, 68), C.ink);
+  txt(amer(P.dec), W - PAD, y, F(800, 68, 1), C.lime, "right");
+  y += 50;
+  txt(`${P.legs.length} legs · ${P.dec.toFixed(2)}x · ${(P.p * 100).toFixed(1)}% chance all ${P.legs.length} hit`, PAD, y, F(500, 30, 1), C.muted);
+  y += 48;
+  // legs
+  for (const l of P.legs) {
+    const top = y; x.font = F(700, 40);
+    const head = wrap(x, `${l.n} ${l.sd === "OVER" ? "Over" : "Under"} ${l.l} ${l.lbl}`, IN - 140);
+    const H = 36 + head.length * 50 + 44 + 28;
+    ops.push(() => { x.fillStyle = C.panel; rr(x, PAD, top, IN, H, 28); x.fill(); x.strokeStyle = l.r === "win" ? C.lime : l.r === "loss" ? C.miss : C.line; x.lineWidth = 3; x.stroke(); });
+    const st = l.r === "win" ? [C.lime, "✓", "#050604"] : l.r === "loss" ? [C.miss, "✕", "#050604"] : l.r === "push" || l.r === "void" ? [C.muted, "–", "#050604"] : [C.line, "•", C.orange];
+    ops.push(() => { x.fillStyle = st[0]; x.beginPath(); x.arc(PAD + 60, top + 62, 26, 0, Math.PI * 2); x.fill(); });
+    txt(st[1], PAD + 60, top + 74, F(800, 34), st[2], "center");
+    head.forEach((t, k) => txt(t, PAD + 112, top + 36 + 38 + k * 50, F(700, 40), C.ink));
+    const sub = `${l.t} vs ${l.opp} · ${ml(l.o)}${l.bk ? " " + l.bk : ""}${l.v != null ? " · got " + l.v : ""}`;
+    txt(sub, PAD + 112, top + 36 + head.length * 50 + 30, F(500, 28, 1), C.muted);
+    y += H + 20;
+  }
+  // result
+  y += 20;
+  const rt = res === "open" ? `$${DATA.stake} pays $${(DATA.stake * P.dec).toFixed(2)} if all ${P.legs.length} hit` : res === "win" ? "CASHED " + money(P.pl) : res === "loss" ? "Lost " + money(P.pl) : "Push";
+  const rc = res === "win" ? C.lime : res === "loss" ? C.miss : res === "open" ? C.orange : C.muted;
+  const ry = y;
+  ops.push(() => { x.fillStyle = rc + "22"; rr(x, PAD, ry, IN, 96, 48); x.fill(); x.strokeStyle = rc; x.lineWidth = 3; x.stroke(); });
+  txt(rt, W / 2, ry + 62, F(800, 38, 1), rc, "center");
+  y += 96 + 64;
+  txt("young954.github.io/prop-board", PAD, y, F(700, 28, 1), C.lime);
+  txt("Mock parlay · not betting advice", W - PAD, y, F(500, 24), C.muted, "right");
+  y += PAD - 10;
+  if (measureOnly) return y;
+  const cvs = x.canvas; cvs.width = W; cvs.height = y;
+  x.fillStyle = C.bg; x.fillRect(0, 0, W, y);
+  const g = x.createRadialGradient(W, 0, 0, W, 0, 700); g.addColorStop(0, "rgba(198,242,12,.16)"); g.addColorStop(1, "rgba(198,242,12,0)"); x.fillStyle = g; x.fillRect(0, 0, W, y);
+  x.textBaseline = "alphabetic"; ops.forEach(f => f()); return cvs;
+}
+function makeImage(P){
+  return new Promise(ok => { try {
+    const cv = document.createElement("canvas"); drawParlay(P, true, cv); const out = drawParlay(P, false, cv);
+    out.toBlob(b => ok(b ? new File([b], `parlay-${String(P.name).toLowerCase().replace(/\W+/g, "-")}-${DAY}.png`, {type: "image/png"}) : null), "image/png");
+  } catch (e) { ok(null); } });
+}
+async function prepImages(){
+  const d = DATA && DATA.days[DAY]; if (!d) return;
+  try { if (document.fonts) await document.fonts.ready; } catch (e) {}
+  d.parlays.forEach((P, i) => { const k = DAY + "|" + i; if (!IMG[k]) IMG[k] = makeImage(P); });
+}
+function saveFile(f){ const a = document.createElement("a"); a.href = URL.createObjectURL(f); a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
 body.addEventListener("click", async e => {
   const btn = e.target.closest("[data-pl-act]"); if (!btn || !DATA) return;
   const P = DATA.days[DAY]?.parlays[+btn.dataset.i]; if (!P) return;
-  const text = shareText(P);
-  if (btn.dataset.plAct === "share" && navigator.share) {
-    try { await navigator.share({title: "Parlay Lab: " + P.name, text}); } catch (err) { if (err && err.name !== "AbortError") flash(btn, (await copyText(text)) ? "Copied instead" : "Couldn't share"); }
-    return;
-  }
-  flash(btn, (await copyText(text)) ? "Copied ✓" : "Couldn't copy");
+  if (btn.dataset.plAct === "copy") { flash(btn, (await copyText(shareText(P))) ? "Copied ✓" : "Couldn't copy"); return; }
+  const k = DAY + "|" + btn.dataset.i; if (!IMG[k]) IMG[k] = makeImage(P);
+  const file = await IMG[k]; if (!file) { flash(btn, "Couldn't make image"); return; }
+  if (navigator.canShare && navigator.canShare({files: [file]})) {
+    try { await navigator.share({files: [file], title: "Parlay Lab: " + P.name}); }
+    catch (err) { if (err && err.name !== "AbortError") { saveFile(file); flash(btn, "Image saved"); } }
+  } else { saveFile(file); flash(btn, "Image saved"); }
 });
 function card(P, i){
   const res = P.res || "open";
@@ -3317,6 +3384,7 @@ function draw(){
       <tr><td colspan="5" class="pl-note" style="text-align:left;white-space:normal">Backtest (past days, using only stats known before each game)</td></tr>${names.map(n => recRow(n, r["replay|" + n])).join("")}${recRow("All", r["replay|All"])}</tbody></table></div>
     <p class="pl-note">How it learns: every graded leg is compared with the chance the model gave it. When a kind of leg (say NFL rushing Overs) keeps cashing less than promised, its chance is marked down before the next day's picks. Backtest NBA days through Nov 16 overlap the games the model was fitted on, so the live record is the real test. Mock results only, not betting advice.</p>`;
   document.getElementById("pl-d").onchange = e => { DAY = e.target.value; draw(); };
+  prepImages();
 }
 async function loadLab(){
   try { const r = await fetch("parlays.json", {cache: "no-cache"}); if (!r.ok) throw new Error("HTTP " + r.status); DATA = await r.json(); draw(); }
