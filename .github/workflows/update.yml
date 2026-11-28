@@ -28,6 +28,8 @@ jobs:
       PYTHONDONTWRITEBYTECODE: "1"
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Pull fresh NBA data
         run: python3 update.py || echo "NBA update hit an error; keeping the last good data"
@@ -44,8 +46,12 @@ jobs:
             echo "No changes"
           else
             git commit -m "Update board data"
-            git pull --rebase origin main
-            git push
+            # if another update saved first, keep this run's fresher data
+            for i in 1 2 3; do
+              git pull --rebase -X theirs origin main && git push && break
+              git rebase --abort 2>/dev/null || true
+              sleep 10
+            done
           fi
 
       - uses: actions/configure-pages@v5
