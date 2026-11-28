@@ -2475,11 +2475,12 @@ const W_FORM = 0.4;        // weight on the last 5 games vs the season average
 const W_H2H = 0.15;        // weight on last year's games vs this opponent (needs 2+ games)
 const WK_CAP = 0.05;       // minutes / touches trend can move the projection at most 5%
 const INJ_CAP = 0.08;      // teammates out can lift the projection at most 8%
+const SHOCK_CAP = 0.20;    // ...or 20% when 2+ regular starters are out together and the box scores haven't seen it yet
 const QUESTIONABLE = 3;
-/* Backtest calibration (NBA). Logistic fit on 12,700+ graded 2026-27 props (Oct 20 - Nov 16), out-of-sample tested:
-   Brier 0.2434 vs the books' own no-vig price 0.2438. Inputs, in order: market logit, projection-minus-market logit,
+/* Backtest calibration (NBA). Logistic fit on 19,340 graded 2026-27 props (Oct 25 - Nov 27), refit Nov 28. Out of sample
+   (fit to Nov 20, tested Nov 21-27): Brier 0.2438 vs the books' own no-vig price 0.2445 and the old fit 0.2442. Inputs, in order: market logit, projection-minus-market logit,
    season hit rate at the line, last-10 hit rate at the line, median vs line, minutes trend, home, points-type stat. */
-const CAL = {b:-0.0337, w:[0.9056, 0.1887, -0.2268, -0.3424, 0.219, 0.0607, -0.0352, -0.1338], n:12708, from:"Oct 20", to:"Nov 16"};
+const CAL = {b:-0.0381, w:[1.1281, 0.5733, -0.0897, -0.7577, 0.1425, -0.1733, -0.0145, -0.1523], n:19340, from:"Oct 25", to:"Nov 27"};
 const EV_MIN = 0.05;       // a pick needs +5% expected value at the best available price (holdout: +6.7% ROI at 5-6%, +4% at 3%)    // points of probability taken off an Over when the player is questionable
 
 const MODEL = {
@@ -2511,15 +2512,15 @@ function pOver(mu, sd, line, count){
 /* ---- data ---- */
 const FILES = ["props","games","h2h","dvp","injuries","slate","nfl_teams","nfl_dvp","nfl_slate","status"];
 const D = {}, ST = {nba:{day:"",side:"all",stat:"all",min:2,shown:12}, nfl:{day:"",side:"all",stat:"all",min:2,shown:12}};
-let NBA_LOG = {}, NFL_P = {}, RES = {nba:[], nfl:[]}, SKIP = {nba:0, nfl:0}, loadErr = null;
+let NBA_LOG = {}, GAME_OF = new Map(), NFL_P = {}, RES = {nba:[], nfl:[]}, SKIP = {nba:0, nfl:0}, loadErr = null;
 const TXT = {};
 const J = async n => { const r = await fetch(n + ".json", {cache:"no-cache"}); if (!r.ok) throw new Error(n + " HTTP " + r.status);
   const t = await r.text(); if (TXT[n] === t && n in D) return D[n]; TXT[n] = t; J.changed = true; return JSON.parse(t); };
 
 function prep(){
-  NBA_LOG = {};
+  NBA_LOG = {}; GAME_OF = new Map();
   const gs = Object.values(D.games || {}).filter(g => g && g.players).sort((a, b) => String(a.date) < String(b.date) ? -1 : 1);
-  for (const g of gs) for (const p of g.players){ if (!(p.min >= 5)) continue; (NBA_LOG[norm(p.n) + "|" + p.t] ||= []).push(p); }
+  for (const g of gs) for (const p of g.players){ if (!(p.min >= 5)) continue; (NBA_LOG[norm(p.n) + "|" + p.t] ||= []).push(p); GAME_OF.set(p, g); }
   NFL_P = {};
   for (const [t, d] of Object.entries(D.nfl_teams || {})) for (const p of Object.values((d && d.players) || {})) NFL_P[norm(p.n) + "|" + t] = p;
 }
@@ -2597,12 +2598,18 @@ function evaluate(lg, id, g, row){
         lg === "nba" ? `${f1(w5)} min last 3 vs ${f1(wS)} season` : `${f1(w5)} ${key.startsWith("rec") ? "targets" : key === "pyd" || key === "cmp" ? "attempts" : "carries"} last 3 vs ${f1(wS)} season`, P(mu * f), mu * f); } }
   /* 4. teammates out */
   const outs = outRows(id, team).filter(r => norm(r[1]) !== norm(name));
-  let bump = 0; const who = [];
+  let bump = 0, fresh = 0; const who = [];
+  // NBA: only the part of an absence his recent games haven't already shown counts (a teammate out for weeks is already
+  // in the logs). Two or more regular starters newly out together is a shock the logs can't see, so the cap opens up.
+  const last5 = lg === "nba" ? all.slice(-5) : [];
   for (const r of outs){
     if (lg === "nba"){
       const L = NBA_LOG[norm(r[1]) + "|" + team]; if (!L || L.length < 3) continue;
       const mn = mean(L.map(p => p.min)); if (mn < 15) continue;
-      const pts = mean(L.map(p => p.pts)); bump += (/^(pts|pr|pa|pra)$/.test(key) ? .0025 : .0012) * pts; who.push(`${r[1]} (${f1(pts)} ppg)`);
+      const played = last5.length ? last5.filter(p => { const g = GAME_OF.get(p); return g && g.players.some(q => q.t === team && norm(q.n) === norm(r[1]) && q.min > 0); }).length / last5.length : 1;
+      if (played <= 0) continue;
+      if (mn >= 26 && played >= .6) fresh++;
+      const pts = mean(L.map(p => p.pts)); bump += (/^(pts|pr|pa|pra)$/.test(key) ? .0025 : .0012) * pts * played; who.push(`${r[1]} (${f1(pts)} ppg${played < 1 ? ", partly in his recent games already" : ""})`);
     } else {
       const q = NFL_P[norm(r[1]) + "|" + team]; if (!q) continue; const L = q.logs || []; if (L.length < 3) continue;
       const pos = String(r[2] || "").toUpperCase();
@@ -2610,8 +2617,8 @@ function evaluate(lg, id, g, row){
       else if (/^(ryd|car)$/.test(key) && pos === "RB"){ const c = mean(L.map(x => x[8])); if (c >= 5){ bump += .012 * c; who.push(`${r[1]} (${f1(c)} car/g)`); } }
     }
   }
-  bump = Math.min(INJ_CAP, bump);
-  if (bump >= .01) push("Teammates out", `${who.join(", ")} out: +${Math.round(bump * 1000) / 10}% to the projection`, P(mu * (1 + bump)), mu * (1 + bump));
+  bump = Math.min(fresh >= 2 ? SHOCK_CAP : INJ_CAP, bump);
+  if (bump >= .01) push("Teammates out", `${who.join(", ")} out${fresh >= 2 ? " together for the first time lately (bigger role tonight)" : ""}: +${Math.round(bump * 1000) / 10}% to the projection`, P(mu * (1 + bump)), mu * (1 + bump));
   /* shrink toward the market when there is little data */
   const modelP = p, s = n / (n + K_SHRINK);
   const raw = baseP - pm;                       // season baseline vs market
@@ -2628,7 +2635,7 @@ function evaluate(lg, id, g, row){
     tags.push(`${st.st}${st.why ? " — " + st.why : ""}`);
     if (hit){ pf -= hit; rows.push({label:"Injury risk", detail:`${st.st}: minutes could be limited`, d: -hit}); }
   }
-  /* backtest calibration: re-weigh everything against how 12,700 graded props actually finished */
+  /* backtest calibration: re-weigh everything against how 19,000+ graded props actually finished */
   const l10v = vals.slice(-10), hits = {l5:[o5, n5], l10:[l10v.filter(v => over(v, line)).length, l10v.length], s:[oS, n]};
   if (lg === "nba"){
     const lgt = q => { q = Math.min(Math.max(q, 1e-4), 1 - 1e-4); return Math.log(q / (1 - q)); };
@@ -3376,7 +3383,7 @@ function draw(){
   const d = DATA.days[DAY], r = DATA.rec, names = ["Steady", "Sharp", "Same game", "Mixed"];
   const live = names.some(n => r["live|" + n]);
   body.innerHTML = `<div class="pl-bar"><select id="pl-d" aria-label="Day">${keys.map(k => `<option value="${k}" ${k === DAY ? "selected" : ""}>${esc(dayLbl(k))}</option>`).join("")}</select>
-      <span class="pl-note">Mock $${DATA.stake} per parlay. % = the model's chance all 4 legs hit. Locked each morning, never changed after.</span></div>
+      <span class="pl-note">Mock $${DATA.stake} per parlay. % = the model's chance all 4 legs hit. Locked about 100 minutes before the first game (after injury news), never changed after.</span></div>
     <div class="pl-g">${d.parlays.map(card).join("") || `<p class="muted">No parlay today: not enough posted lines.</p>`}</div>
     <h3 style="margin:6px 0 0;font-size:14px">Record</h3>
     <div style="overflow-x:auto"><table class="pl-t"><thead><tr><th>Parlay</th><th>W-L</th><th>Legs hit</th><th>P/L</th><th>ROI</th></tr></thead><tbody>

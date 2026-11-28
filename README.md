@@ -56,8 +56,8 @@ No JSON contracts changed. The page reads the existing `status.json` `errors` li
 `parlay_lab.js` (Node, no packages) runs in the robot after the NBA/NFL updates. It reuses the Edge Finder model straight out of
 `index.html`, so the parlays always match what users see.
 
-- **Daily card**: locked once a day after 10 AM ET (or 3 h before the first game) once 12+ priced legs exist. Four 4-leg parlays:
-  Steady (most likely legs, one per game), Sharp (every leg 57%+ and +EV), Same game (long shot, payout cut 20%),
+- **Daily card**: locked once a day about 100 minutes before the first game still to start (after most injury news), once 12+ priced legs exist. Four 4-leg parlays:
+  Steady (most likely legs that are break-even or better at their price, one per game), Sharp (every leg 57%+ and +EV), Same game (long shot, payout cut 20%; its game is kept out of the other three),
   Mixed (2 NBA + 2 NFL on NFL days, otherwise 4 Unders). Never changed after it is locked.
 - **Grading**: legs graded from box scores (NBA `games.json`, NFL `nfl_teams.json` logs). DNP = void, exact line = push. Mock $10 stake.
 - **Learning**: every eligible leg of every card is logged to `archive/parlay_legs.json` and graded. Per league/side/stat group, the gap
@@ -65,3 +65,15 @@ No JSON contracts changed. The page reads the existing `status.json` `errors` li
 - **Backtest**: `node parlay_lab.js --replay` rebuilds every past NBA day and finished NFL week using only data known before each game.
   Nov 28 backtest: Steady 13-22 +49%, Sharp 9-26 +75%, Same game 7-32 -25%, Mixed 7-28 +8% (all 36-108, +25% on $10 stakes).
 - **Site**: the Parlay Lab panel under the NBA/NFL tabs fetches `parlays.json` (~130 KB) only when opened.
+
+## Nov 28, 2026 accuracy pass
+
+- **Calibration refit** on 19,340 graded NBA props (Oct 25 - Nov 27). Out of sample (fit to Nov 20, tested Nov 21-27) Brier 0.2438
+  vs the old fit 0.2442 and the books' no-vig price 0.2445.
+- **Teammates out, done properly (NBA)**: an absence only counts for the part his last 5 games haven't already shown (no double
+  counting a teammate who has been out for weeks). When 2+ regular starters (26+ min) are newly out together, the cap rises
+  from 8% to 20% so the model can flip to Overs instead of trusting stale Unders. Improved the holdout Brier on both test windows.
+- **Parlay Lab**: later lock (100 min before the first game), Steady needs break-even or better price, Same-game game kept out
+  of the other parlays. Card-wide "use each player/game once or twice" rules were tested and dropped: they made the legs worse.
+  Backtest after the pass: 41-103, legs 68.9%, +$462 on $10 stakes (before: 36-108, 65.7%, +$362). The refit is in-sample for
+  these days, so the live record from Nov 29 is the real test.

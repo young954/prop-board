@@ -34,6 +34,7 @@ const NFL_TEAMS_FULL = D.nfl_teams;
 const STAKE = 10;            // mock $10 per parlay
 const SGP_HAIRCUT = 0.8;     // books pay same-game parlays less than the straight product; we pay ourselves 80% of it
 const MIN_P = 0.5, MAX_JUICE = -300;
+const LOCK_MIN = 100;        // lock the card this many minutes before the first game still to start (after most injury news)
 const ET = d => new Date(d).toLocaleDateString("en-CA", {timeZone: "America/New_York"});
 const etHour = d => +new Date(d).toLocaleString("en-US", {timeZone: "America/New_York", hour: "numeric", hourCycle: "h23"});
 const statGroup = k => /^(pts|pr|pa|pra)$/.test(k) ? "points" : /^(reb|ast|tp)$/.test(k) ? k : /^(pyd|cmp|ptd)$/.test(k) ? "passing" : /^(ryd|car)$/.test(k) ? "rushing" : "receiving";
@@ -68,54 +69,63 @@ function candidates(ids, slateOf, adj){
   return out;
 }
 
-/* ---- the four parlays ---- */
-const conflict = (a, b) => a.id === b.id && M.norm(a.n) === M.norm(b.n);   // one leg per player
-function pickDistinct(list, n, okGame){
-  const out = [], games = new Set();
-  for (const c of list){ if (out.length === n) break;
-    if (okGame && games.has(c.id)) continue; if (out.some(x => conflict(x, c))) continue;
-    out.push(c); games.add(c.id); }
-  return out.length === n ? out : null;
-}
+/* ---- the four parlays ----
+   The Same-game parlay's game is kept out of the other three, so one game can't sink the whole card.
+   Tested Nov 28 on every past day: also forcing each player or game onto the card only once or twice made the picks
+   worse (legs hit 61-62% vs 69%), because it pushes out the model's best legs. So the best legs may repeat across parlays. */
+const pkey = c => c.id + "|" + M.norm(c.n);
 function build(cands){
   const ok = cands.filter(c => c.pa >= MIN_P);
-  const P = [];
-  const add = (name, why, legs, sgp) => { if (!legs) return;
+  const out = {};
+  let sgpId = null;
+  const mk = (name, why, legs, sgp) => {
     const price = legs.reduce((s, l) => s * M.dec(l.o), 1) * (sgp ? SGP_HAIRCUT : 1), p = legs.reduce((s, l) => s * l.pa, 1);
-    P.push({name, why, sgp: !!sgp, legs: legs.map(l => ({id:l.id, lg:l.lg, t:l.t, n:l.n, k:l.k, lbl:l.lbl, l:l.l, sd:l.sd, o:l.o, bk:l.bk, p:l.pa, opp:l.opp})),
-      dec: +price.toFixed(2), p: +p.toFixed(4), ev: +(p * price - 1).toFixed(3)}); };
-  // 1. Steady: the four most likely legs, one per game
-  add("Steady", "The 4 legs the model trusts most, one per game", pickDistinct([...ok].sort((a, b) => b.pa - a.pa), 4, true));
-  // 2. Sharp: every leg 57%+ AND priced in our favor (best record across every test period)
-  const steadyKeys = new Set((P[0] ? P[0].legs : []).map(l => l.id + l.n + l.k));
-  let sharpList = ok.filter(c => c.pa >= 0.57 && c.ev > 0).sort((a, b) => b.pa - a.pa);
-  let sharp = pickDistinct(sharpList, 4, true);
-  if (sharp && sharp.every(l => steadyKeys.has(l.id + l.n + l.k))) sharp = pickDistinct(sharpList.slice(1), 4, true);
-  let sharpWhy = "Every leg 57%+ and priced in our favor, one per game";
-  if (!sharp){ sharpList = ok.filter(c => c.pa >= 0.54 && c.ev > 0).sort((a, b) => b.ev - a.ev);
-    sharp = pickDistinct(sharpList.filter(c => !steadyKeys.has(c.id + c.n + c.k)), 4, true) || pickDistinct(sharpList, 4, true);
-    sharpWhy = "Thin slate: fewer 57% legs today, so every leg 54%+ and priced in our favor"; }
-  add("Sharp", sharpWhy, sharp);
-  // 3. Same game: the game whose 4 best legs (different players) multiply to the highest chance
+    out[name] = {name, why, sgp: !!sgp, legs: legs.map(l => ({id:l.id, lg:l.lg, t:l.t, n:l.n, k:l.k, lbl:l.lbl, l:l.l, sd:l.sd, o:l.o, bk:l.bk, p:l.pa, opp:l.opp})),
+      dec: +price.toFixed(2), p: +p.toFixed(4), ev: +(p * price - 1).toFixed(3)}; };
+  // pick n legs, one per game, staying out of the Same-game parlay's game unless the slate is too thin
+  const pick = (list, n) => {
+    for (const lvl of [0, 1]){
+      const legs = [], games = new Set();
+      for (const c of list){ if (legs.length === n) break;
+        if (games.has(c.id)) continue;
+        if (lvl < 1 && c.id === sgpId) continue;
+        if (legs.some(x => pkey(x) === pkey(c))) continue;
+        legs.push(c); games.add(c.id); }
+      if (legs.length === n) return legs;
+    }
+    return null;
+  };
+  // 1. Same game: the game whose 4 best legs (different players) multiply to the highest chance
   let best = null;
   for (const id of new Set(ok.map(c => c.id))){
-    const legs = pickDistinct(ok.filter(c => c.id === id).sort((a, b) => b.pa - a.pa), 4, false); if (!legs) continue;
-    const p = legs.reduce((s, l) => s * l.pa, 1); if (!best || p > best.p) best = {legs, p};
+    const legs = [], seen = new Set();
+    for (const c of ok.filter(c => c.id === id).sort((a, b) => b.pa - a.pa)){ if (legs.length === 4) break; if (seen.has(pkey(c))) continue; seen.add(pkey(c)); legs.push(c); }
+    if (legs.length < 4) continue;
+    const p = legs.reduce((s, l) => s * l.pa, 1); if (!best || p > best.p) best = {legs, p, id};
   }
-  add("Same game", "Long shot: 4 players from the one game the model likes most. Legs in one game move together, and books pay same-game parlays less (we cut the payout 20%)", best && best.legs, true);
-  // 4. Mixed: NBA + NFL when both play today, otherwise four different stat types
+  if (best){ sgpId = best.id; mk("Same game", "Long shot: 4 players from the one game the model likes most. Legs in one game move together, and books pay same-game parlays less (we cut the payout 20%)", best.legs, true); }
+  // 2. Steady: the most likely legs that are at least break-even at their price, one per game
+  const st = pick(ok.filter(c => c.ev >= 0).sort((a, b) => b.pa - a.pa), 4);
+  if (st) mk("Steady", "The 4 most likely legs that are still fairly priced (break-even or better), one per game", st);
+  // 3. Sharp: every leg 57%+ AND priced in our favor
+  let sh = pick(ok.filter(c => c.pa >= 0.57 && c.ev > 0).sort((a, b) => b.pa - a.pa), 4), shWhy = "Every leg 57%+ and priced in our favor, one per game";
+  if (!sh){ sh = pick(ok.filter(c => c.pa >= 0.54 && c.ev > 0).sort((a, b) => b.ev - a.ev), 4); shWhy = "Thin slate: fewer 57% legs today, so every leg 54%+ and priced in our favor"; }
+  // never the same 4 legs as Steady: swap in the next-best leg instead
+  const same = (a, b) => a && b && a.length === b.length && a.every(x => b.some(y => pkey(y) === pkey(x) && y.k === x.k && y.sd === x.sd));
+  if (sh && same(sh, st)){ const base = ok.filter(c => c.pa >= (shWhy.startsWith("Thin") ? 0.54 : 0.57) && c.ev > 0).sort(shWhy.startsWith("Thin") ? (a, b) => b.ev - a.ev : (a, b) => b.pa - a.pa);
+    let alt = null; for (const drop of [...sh].reverse()){ alt = pick(base.filter(c => c !== drop), 4); if (alt && !same(alt, st)) break; alt = null; }
+    sh = alt; }
+  if (sh) mk("Sharp", shWhy, sh);
+  // 4. Mixed: NBA + NFL when both play today, otherwise four Unders
   const nba = ok.filter(c => c.lg === "nba").sort((a, b) => b.pa - a.pa), nfl = ok.filter(c => c.lg === "nfl").sort((a, b) => b.pa - a.pa);
-  const used = new Set(P.flatMap(x => x.legs.map(l => l.id + l.n + l.k)));
-  const fresh = l => !used.has(l.id + l.n + l.k);
   if (nba.length >= 2 && nfl.length >= 2){
-    const a = pickDistinct(nba.filter(fresh), 2, true) || pickDistinct(nba, 2, true), b = pickDistinct(nfl.filter(fresh), 2, true) || pickDistinct(nfl, 2, true);
-    add("Mixed", "2 NBA + 2 NFL legs", a && b ? [...a, ...b] : null);
+    const x = pick(nba, 2), y = pick(nfl, 2);
+    if (x && y) mk("Mixed", "2 NBA + 2 NFL legs", [...x, ...y]);
   } else {
-    const legs = pickDistinct(ok.filter(c => c.sd === "UNDER" && fresh(c)).sort((a, b) => b.pa - a.pa), 4, true)
-              || pickDistinct(ok.filter(c => c.sd === "UNDER").sort((a, b) => b.pa - a.pa), 4, true);
-    add("Mixed", (nba.length < 2 ? "No NBA today" : "No NFL today") + ", so 4 Unders from 4 games (Unders have cashed more than Overs all season)", legs);
+    const legs = pick(ok.filter(c => c.sd === "UNDER").sort((a, b) => b.pa - a.pa), 4);
+    if (legs) mk("Mixed", (nba.length < 2 ? "No NBA today" : "No NFL today") + ", so 4 Unders from 4 games (Unders have cashed more than Overs all season)", legs);
   }
-  return P;
+  return ["Steady", "Sharp", "Same game", "Mixed"].map(n => out[n]).filter(Boolean);
 }
 
 /* ---- grading ---- */
@@ -210,13 +220,13 @@ function run(replay){
   // grade everything still open
   for (const d of Object.values(days)) grade(d);
   gradeLegLog(legLog);
-  // lock today's live card once: after 10 AM ET (or 3 h before the first game) with enough legs posted
+  // lock today's live card once, about 100 minutes before the first game still to start (injury news is mostly out by then)
   if (!replay && !(days[today] && !days[today].replay)){
     M.prep();
     const ids = nbaIds(today).filter(id => (D.slate[id] || {}).status === "scheduled"), nfl = nflIdsOn(today).filter(id => D.nfl_slate[id].status === "scheduled");
     const starts = [...ids.map(id => D.slate[id].start), ...nfl.map(id => D.nfl_slate[id].start)].filter(Boolean).map(Date.parse);
     const first = starts.length ? Math.min(...starts) : null, now = Date.now();
-    if (first && first > now && (process.env.LAB_FORCE || etHour(now) >= 10 || first - now < 3 * 3600e3)){
+    if (first && first > now && (process.env.LAB_FORCE || first - now <= LOCK_MIN * 60e3)){
       const adj = learn(legLog), cands = candidates([...ids, ...nfl], id => D.slate[id] || D.nfl_slate[id], adj).filter(c => {
         const g = D.slate[c.id] || D.nfl_slate[c.id]; return g && Date.parse(g.start) > now; });
       if (cands.length >= 12){
