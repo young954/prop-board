@@ -50,3 +50,18 @@ No JSON contracts changed. The page reads the existing `status.json` `errors` li
 - Filters for position (NBA), home/away, rest days and hit-rate window need those fields on the player objects.
 - Compact sticky "locks strip" was skipped to keep the pinned header short.
 - Service worker / lazy loading of season logs.
+
+## Parlay Lab (Nov 28, 2026)
+
+`parlay_lab.js` (Node, no packages) runs in the robot after the NBA/NFL updates. It reuses the Edge Finder model straight out of
+`index.html`, so the parlays always match what users see.
+
+- **Daily card**: locked once a day after 10 AM ET (or 3 h before the first game) once 12+ priced legs exist. Four 4-leg parlays:
+  Steady (most likely legs, one per game), Sharp (every leg 57%+ and +EV), Same game (long shot, payout cut 20%),
+  Mixed (2 NBA + 2 NFL on NFL days, otherwise 4 Unders). Never changed after it is locked.
+- **Grading**: legs graded from box scores (NBA `games.json`, NFL `nfl_teams.json` logs). DNP = void, exact line = push. Mock $10 stake.
+- **Learning**: every eligible leg of every card is logged to `archive/parlay_legs.json` and graded. Per league/side/stat group, the gap
+  between how often legs cashed and what the model said is added to the next day's chances (shrunk by sample size, capped at 8 pts NBA / 10 NFL).
+- **Backtest**: `node parlay_lab.js --replay` rebuilds every past NBA day and finished NFL week using only data known before each game.
+  Nov 28 backtest: Steady 13-22 +49%, Sharp 9-26 +75%, Same game 7-32 -25%, Mixed 7-28 +8% (all 36-108, +25% on $10 stakes).
+- **Site**: the Parlay Lab panel under the NBA/NFL tabs fetches `parlays.json` (~130 KB) only when opened.

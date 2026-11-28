@@ -37,6 +37,9 @@ jobs:
       - name: Pull fresh NFL data
         run: python3 nfl_update.py || echo "NFL update hit an error; keeping the last good data"
 
+      - name: Parlay Lab (lock today's mock parlays, grade finished ones)
+        run: node parlay_lab.js || echo "Parlay Lab hit an error; keeping yesterday's parlays"
+
       - name: Save data to the repo
         run: |
           git config user.name "prop-board-bot"

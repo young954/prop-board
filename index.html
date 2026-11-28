@@ -204,6 +204,27 @@ footer a{color:var(--court)}
 @media (max-width:400px){.dvpg{grid-template-columns:1fr}}
 @media (prefers-reduced-motion:no-preference){.lk{transition:border-color .15s}}
 </style>
+<style>
+#pl{margin:12px 0 4px;border:1px solid var(--line);border-radius:14px;background:var(--panel);overflow:hidden}
+#pl>summary{cursor:pointer;list-style:none;padding:12px 14px;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline;font:700 15px var(--display,inherit)}
+#pl>summary::-webkit-details-marker{display:none}
+#pl>summary::before{content:"▸";color:var(--muted)}#pl[open]>summary::before{content:"▾"}
+#pl>summary small{font:500 12px var(--mono);color:var(--muted)}
+.pl-b{padding:0 14px 14px;display:flex;flex-direction:column;gap:10px}
+.pl-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.pl-bar select{font:600 13px var(--mono);padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.pl-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.pl-c{border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+.pl-c.win{border-color:var(--hit);background:var(--hit-soft)}.pl-c.loss{opacity:.8}
+.pl-h{display:flex;justify-content:space-between;gap:8px;align-items:baseline}.pl-h b{font-size:15px}
+.pl-x{font:700 13px var(--mono)}.pl-why{font-size:12px;color:var(--muted)}
+.pl-c ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:13px}
+.pl-c li{display:grid;grid-template-columns:18px 1fr auto;gap:6px;align-items:baseline}
+.pl-c li .o{font:600 11px var(--mono);color:var(--muted)}
+.pl-r{font:700 12px var(--mono)}.pl-r.w{color:var(--hit)}.pl-r.l{color:var(--miss)}
+.pl-t{width:100%;border-collapse:collapse;font:500 11.5px var(--mono)}.pl-t th,.pl-t td{padding:4px 4px;white-space:nowrap;text-align:right;border-bottom:1px solid var(--line)}.pl-t th:first-child,.pl-t td:first-child{text-align:left}
+.pl-t .up{color:var(--hit)}.pl-t .dn{color:var(--miss)}
+.pl-note{font-size:12px;color:var(--muted)}
+</style>
 
 <div class="tk" id="tk" role="region" aria-label="Live ticker: milestones, hot streaks and props, NBA and NFL"><div class="tk-lbl">Ticker</div><div class="tk-view"><div class="tk-track" id="tk-track"></div></div></div>
 <div class="wrap">
@@ -211,6 +232,7 @@ footer a{color:var(--court)}
     <button role="tab" id="tb-nba" aria-controls="tab-nba" aria-selected="true">NBA</button>
     <button role="tab" id="tb-nfl" aria-controls="tab-nfl" aria-selected="false">NFL</button>
   </nav>
+<details id="pl" aria-label="Parlay Lab"><summary>Parlay Lab <small id="pl-sum">4 mock 4-leg parlays a day, graded automatically · tap to open</small></summary><div class="pl-b" id="pl-b"><p class="muted">Loading…</p></div></details>
 <div id="tab-nba" class="tabp" role="tabpanel" aria-labelledby="tb-nba">
   <header>
     <h1><span>NBA</span> Prop Board</h1>
@@ -3219,4 +3241,47 @@ boot(); deepLink();
 })();
 </script>
 <style>.b2bs{font-style:normal;font-weight:700;color:var(--warn);font-size:.85em;white-space:nowrap}.skb{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;font:700 11px var(--mono);background:color-mix(in srgb,var(--court) 18%,transparent);color:var(--court);white-space:nowrap}.stk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}.stk-c{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0}.stk-c h3{margin:0;font-family:var(--display);font-weight:800;font-size:17px;text-transform:uppercase;letter-spacing:.04em}.stk-c h3 small{display:block;font:400 12px var(--body);text-transform:none;letter-spacing:0;color:var(--muted)}.stk-p{border-top:1px solid var(--line);padding-top:7px}.stk-n{font-weight:700}.stk-n small{font:500 11.5px var(--mono);color:var(--muted)}.stk-s{font:600 13px var(--body);color:var(--court)}.stk-s b{font-size:18px}.stk-w{color:var(--warn)}.stk-sub{font:500 11.5px var(--mono);color:var(--muted)}</style>
+<script>
+/* ---------- Parlay Lab: daily mock parlays from the Edge Finder model (parlay_lab.js writes parlays.json) ---------- */
+(() => {
+"use strict";
+const el = document.getElementById("pl"), body = document.getElementById("pl-b"); if (!el) return;
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const ml = n => n > 0 ? "+" + n : String(n);
+const money = v => (v >= 0 ? "+$" : "−$") + Math.abs(v).toFixed(2);
+let DATA = null, DAY = null;
+const ICON = {win:"✅", loss:"❌", push:"➖", void:"➖", open:"⏳"};
+const dayLbl = k => k.startsWith("nfl-w") ? "NFL Week " + (+k.slice(5)) + " (backtest)" : new Date(k + "T12:00:00").toLocaleDateString("en-US", {weekday:"short", month:"short", day:"numeric"}) + (DATA.days[k].replay ? " (backtest)" : "");
+function recRow(name, x){ if (!x) return ""; const n = x.w + x.l + x.push; const roi = n ? x.pl / (n * DATA.stake) * 100 : 0;
+  return `<tr><td>${esc(name)}</td><td>${x.w}-${x.l}${x.push ? "-" + x.push : ""}</td><td>${x.legs ? Math.round(x.legW / x.legs * 100) : 0}%</td><td class="${x.pl >= 0 ? "up" : "dn"}">${money(x.pl)}</td><td class="${roi >= 0 ? "up" : "dn"}">${roi >= 0 ? "+" : ""}${roi.toFixed(0)}%</td></tr>`; }
+function card(P){
+  const res = P.res || "open";
+  return `<article class="pl-c ${res}"><div class="pl-h"><b>${esc(P.name)}</b><span class="pl-x">${P.dec.toFixed(2)}x · ${(P.p * 100).toFixed(1)}%</span></div>
+    <div class="pl-why">${esc(P.why)}</div>
+    <ul>${P.legs.map(l => `<li><span>${ICON[l.r] || "⏳"}</span><span><b>${esc(l.n)}</b> ${l.sd === "OVER" ? "Over" : "Under"} ${l.l} ${esc(l.lbl)} <span class="o">${esc(l.t)} vs ${esc(l.opp)}${l.v != null ? " · got " + l.v : ""}</span></span><span class="o">${ml(l.o)} ${esc(l.bk || "")}</span></li>`).join("")}</ul>
+    <div class="pl-r ${res === "win" ? "w" : res === "loss" ? "l" : ""}">${res === "open" ? `Pending · $${DATA.stake} pays $${(DATA.stake * P.dec).toFixed(2)} if all 4 hit` : res === "win" ? "Cashed " + money(P.pl) : res === "loss" ? "Lost " + money(P.pl) : "Push"}</div></article>`;
+}
+function draw(){
+  const rank = k => (DATA.days[k].replay ? 0 : 2) + (k.startsWith("nfl") ? 0 : 1);
+  const keys = Object.keys(DATA.days).sort((a, b) => rank(b) - rank(a) || b.localeCompare(a));
+  if (!DAY || !DATA.days[DAY]) DAY = keys[0];
+  const d = DATA.days[DAY], r = DATA.rec, names = ["Steady", "Sharp", "Same game", "Mixed"];
+  const live = names.some(n => r["live|" + n]);
+  body.innerHTML = `<div class="pl-bar"><select id="pl-d" aria-label="Day">${keys.map(k => `<option value="${k}" ${k === DAY ? "selected" : ""}>${esc(dayLbl(k))}</option>`).join("")}</select>
+      <span class="pl-note">Mock $${DATA.stake} per parlay. % = the model's chance all 4 legs hit. Locked each morning, never changed after.</span></div>
+    <div class="pl-g">${d.parlays.map(card).join("") || `<p class="muted">No parlay today: not enough posted lines.</p>`}</div>
+    <h3 style="margin:6px 0 0;font-size:14px">Record</h3>
+    <div style="overflow-x:auto"><table class="pl-t"><thead><tr><th>Parlay</th><th>W-L</th><th>Legs hit</th><th>P/L</th><th>ROI</th></tr></thead><tbody>
+      ${live ? `<tr><td colspan="5" class="pl-note" style="text-align:left;white-space:normal">Live (picked before the games)</td></tr>` + names.map(n => recRow(n, r["live|" + n])).join("") + recRow("All", r["live|All"]) : ""}
+      <tr><td colspan="5" class="pl-note" style="text-align:left;white-space:normal">Backtest (past days, using only stats known before each game)</td></tr>${names.map(n => recRow(n, r["replay|" + n])).join("")}${recRow("All", r["replay|All"])}</tbody></table></div>
+    <p class="pl-note">How it learns: every graded leg is compared with the chance the model gave it. When a kind of leg (say NFL rushing Overs) keeps cashing less than promised, its chance is marked down before the next day's picks. Backtest NBA days through Nov 16 overlap the games the model was fitted on, so the live record is the real test. Mock results only, not betting advice.</p>`;
+  document.getElementById("pl-d").onchange = e => { DAY = e.target.value; draw(); };
+}
+async function loadLab(){
+  try { const r = await fetch("parlays.json?t=" + Date.now(), {cache: "no-store"}); if (!r.ok) throw new Error("HTTP " + r.status); DATA = await r.json(); draw(); }
+  catch (e) { body.innerHTML = `<p class="muted">Parlay Lab couldn't load (${esc(e.message)}). <button type="button" id="pl-retry">Try again</button></p>`; document.getElementById("pl-retry").onclick = loadLab; }
+}
+el.addEventListener("toggle", () => { if (el.open && !DATA) loadLab(); });
+})();
+</script>
 </body></html>
