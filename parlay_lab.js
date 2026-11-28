@@ -169,7 +169,10 @@ function summarize(days, legLog){
 /* ---- main ---- */
 function run(replay){
   const prev = load("parlays");
-  let days = replay ? {} : (prev.days || {}), legLog = replay ? [] : (() => { try { return JSON.parse(fs.readFileSync(LEGS, "utf8")); } catch (e) { return []; } })();
+  const prevLegs = (() => { try { return JSON.parse(fs.readFileSync(LEGS, "utf8")); } catch (e) { return []; } })();
+  const liveDays = Object.keys(prev.days || {}).filter(k => !prev.days[k].replay);
+  // a replay rebuilds the backtest but never touches live (locked) cards or their legs
+  let days = replay ? {} : (prev.days || {}), legLog = replay ? prevLegs.filter(l => liveDays.includes(l.d)) : prevLegs;
   const today = ET(Date.now());
   if (replay){
     const allDays = [...new Set(Object.keys(D.props).filter(id => D.props[id].lg === "nba").map(id => id.slice(0, 10)))].filter(d => d < today).sort();
@@ -190,7 +193,7 @@ function run(replay){
       const cut = {}; for (const [t, td] of Object.entries(NFL_TEAMS_FULL)){ const pl = {};
         for (const [pid, p] of Object.entries(td.players || {})) pl[pid] = {...p, h2h: [], h2hOpp: null, logs: (p.logs || []).filter(r => String(r[16]) !== "2026" || r[0] < w)};
         cut[t] = {...td, players: pl}; }
-      D.nfl_teams = cut; M.prep(); const adj = learn(legLog);
+      D.nfl_teams = cut; M.prep(); const adj = learn(legLog.filter(l => !liveDays.includes(l.d)));
       const ids = Object.keys(D.props).filter(id => id.startsWith("w" + String(w).padStart(2, "0") + "-"));
       const cands = candidates(ids, nflSlate, adj);
       D.nfl_teams = NFL_TEAMS_FULL;
@@ -201,6 +204,8 @@ function run(replay){
       for (const c of cands) legLog.push({d: key, id: c.id, lg: "nfl", t: c.t, n: c.n, k: c.k, l: c.l, sd: c.sd, g: statGroup(c.k), p: c.p});
     }
     M.prep();
+    for (const k of liveDays) days[k] = prev.days[k];
+    legLog.sort((a, b) => String(a.d).localeCompare(String(b.d)));
   }
   // grade everything still open
   for (const d of Object.values(days)) grade(d);
