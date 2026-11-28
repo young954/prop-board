@@ -1,0 +1,53 @@
+name: Keep Board Fresh
+
+# GitHub often skips timed (cron) runs when it is busy, which left the board
+# 12+ hours stale. This runner stays alive and starts "Update Prop Board"
+# every 30 minutes during board hours (10 AM - 2 AM Eastern), then restarts
+# itself before GitHub's 6-hour job limit. The hourly schedule below only
+# exists to revive it if the chain ever breaks.
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  actions: write
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - name: Start board updates every 30 minutes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          start=$(date +%s)
+          # run for about 5h40m, leaving room to hand off to the next runner
+          while [ $(( $(date +%s) - start )) -lt 20400 ]; do
+            hour=$(TZ=America/New_York date +%-H)
+            if [ "$hour" -ge 10 ] || [ "$hour" -lt 2 ]; then
+              busy=$(gh api "repos/$REPO/actions/workflows/update.yml/runs?status=in_progress" --jq '.total_count' || echo 0)
+              if [ "$busy" = "0" ]; then
+                gh api -X POST "repos/$REPO/actions/workflows/update.yml/dispatches" -f ref=main \
+                  && echo "$(TZ=America/New_York date) started an update" \
+                  || echo "could not start an update this round"
+              else
+                echo "update already running; skipping"
+              fi
+            fi
+            sleep 1800
+          done
+
+      - name: Hand off to the next runner
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: gh api -X POST "repos/$REPO/actions/workflows/keepalive.yml/dispatches" -f ref=main
