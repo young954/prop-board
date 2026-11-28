@@ -224,6 +224,7 @@ footer a{color:var(--court)}
 .pl-t{width:100%;border-collapse:collapse;font:500 11.5px var(--mono)}.pl-t th,.pl-t td{padding:4px 4px;white-space:nowrap;text-align:right;border-bottom:1px solid var(--line)}.pl-t th:first-child,.pl-t td:first-child{text-align:left}
 .pl-t .up{color:var(--hit)}.pl-t .dn{color:var(--miss)}
 .pl-note{font-size:12px;color:var(--muted)}
+.pl-a{display:flex;gap:6px}.pl-a button{flex:1;font:700 12px var(--mono);padding:7px 8px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--ink);cursor:pointer;min-height:34px}.pl-a button:active{transform:scale(.97)}.pl-a button.ok{border-color:var(--hit);color:var(--hit)}
 </style>
 
 <div class="tk" id="tk" role="region" aria-label="Live ticker: milestones, hot streaks and props, NBA and NFL"><div class="tk-lbl">Ticker</div><div class="tk-view"><div class="tk-track" id="tk-track"></div></div></div>
@@ -3268,12 +3269,38 @@ const ICON = {win:"✅", loss:"❌", push:"➖", void:"➖", open:"⏳"};
 const dayLbl = k => k.startsWith("nfl-w") ? "NFL Week " + (+k.slice(5)) + " (backtest)" : new Date(k + "T12:00:00").toLocaleDateString("en-US", {weekday:"short", month:"short", day:"numeric"}) + (DATA.days[k].replay ? " (backtest)" : "");
 function recRow(name, x){ if (!x) return ""; const n = x.w + x.l + x.push; const roi = n ? x.pl / (n * DATA.stake) * 100 : 0;
   return `<tr><td>${esc(name)}</td><td>${x.w}-${x.l}${x.push ? "-" + x.push : ""}</td><td>${x.legs ? Math.round(x.legW / x.legs * 100) : 0}%</td><td class="${x.pl >= 0 ? "up" : "dn"}">${money(x.pl)}</td><td class="${roi >= 0 ? "up" : "dn"}">${roi >= 0 ? "+" : ""}${roi.toFixed(0)}%</td></tr>`; }
-function card(P){
+const amer = dec => dec >= 2 ? "+" + Math.round((dec - 1) * 100) : String(Math.round(-100 / (dec - 1)));
+const SITE = "https://young954.github.io/prop-board/";
+function shareText(P){
+  const res = P.res || "open";
+  const head = `Prop Board · Parlay Lab · ${dayLbl(DAY)}\n${P.name} · ${P.legs.length} legs · ${amer(P.dec)} (${P.dec.toFixed(2)}x) · ${(P.p * 100).toFixed(1)}% chance`;
+  const legs = P.legs.map(l => `${ICON[l.r] || "⏳"} ${l.n} ${l.sd === "OVER" ? "Over" : "Under"} ${l.l} ${l.lbl} (${l.t} vs ${l.opp}) ${ml(l.o)}${l.bk ? " " + l.bk : ""}${l.v != null ? " · got " + l.v : ""}`).join("\n");
+  const tail = res === "open" ? `$${DATA.stake} pays $${(DATA.stake * P.dec).toFixed(2)} if all ${P.legs.length} hit` : res === "win" ? "Cashed " + money(P.pl) : res === "loss" ? "Lost " + money(P.pl) : "Push";
+  return `${head}\n${legs}\n${tail}\nMock parlay, not betting advice.\n${SITE}`;
+}
+async function copyText(t){
+  try { await navigator.clipboard.writeText(t); return true; } catch (e) {
+    const ta = document.createElement("textarea"); ta.value = t; ta.setAttribute("readonly", ""); ta.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+    document.body.appendChild(ta); ta.select(); let ok = false; try { ok = document.execCommand("copy"); } catch (_) {} ta.remove(); return ok; }
+}
+function flash(btn, msg){ const was = btn.dataset.lbl || btn.textContent; btn.dataset.lbl = was; btn.textContent = msg; btn.classList.add("ok"); clearTimeout(btn._t); btn._t = setTimeout(() => { btn.textContent = was; btn.classList.remove("ok"); }, 1600); }
+body.addEventListener("click", async e => {
+  const btn = e.target.closest("[data-pl-act]"); if (!btn || !DATA) return;
+  const P = DATA.days[DAY]?.parlays[+btn.dataset.i]; if (!P) return;
+  const text = shareText(P);
+  if (btn.dataset.plAct === "share" && navigator.share) {
+    try { await navigator.share({title: "Parlay Lab: " + P.name, text}); } catch (err) { if (err && err.name !== "AbortError") flash(btn, (await copyText(text)) ? "Copied instead" : "Couldn't share"); }
+    return;
+  }
+  flash(btn, (await copyText(text)) ? "Copied ✓" : "Couldn't copy");
+});
+function card(P, i){
   const res = P.res || "open";
   return `<article class="pl-c ${res}"><div class="pl-h"><b>${esc(P.name)}</b><span class="pl-x">${P.dec.toFixed(2)}x · ${(P.p * 100).toFixed(1)}%</span></div>
     <div class="pl-why">${esc(P.why)}</div>
     <ul>${P.legs.map(l => `<li><span>${ICON[l.r] || "⏳"}</span><span><b>${esc(l.n)}</b> ${l.sd === "OVER" ? "Over" : "Under"} ${l.l} ${esc(l.lbl)} <span class="o">${esc(l.t)} vs ${esc(l.opp)}${l.v != null ? " · got " + l.v : ""}</span></span><span class="o">${ml(l.o)} ${esc(l.bk || "")}</span></li>`).join("")}</ul>
-    <div class="pl-r ${res === "win" ? "w" : res === "loss" ? "l" : ""}">${res === "open" ? `Pending · $${DATA.stake} pays $${(DATA.stake * P.dec).toFixed(2)} if all 4 hit` : res === "win" ? "Cashed " + money(P.pl) : res === "loss" ? "Lost " + money(P.pl) : "Push"}</div></article>`;
+    <div class="pl-r ${res === "win" ? "w" : res === "loss" ? "l" : ""}">${res === "open" ? `Pending · $${DATA.stake} pays $${(DATA.stake * P.dec).toFixed(2)} if all 4 hit` : res === "win" ? "Cashed " + money(P.pl) : res === "loss" ? "Lost " + money(P.pl) : "Push"}</div>
+    <div class="pl-a"><button type="button" data-pl-act="copy" data-i="${i}" aria-label="Copy ${esc(P.name)} parlay">Copy</button><button type="button" data-pl-act="share" data-i="${i}" aria-label="Share ${esc(P.name)} parlay">Share</button></div></article>`;
 }
 function draw(){
   const rank = k => (DATA.days[k].replay ? 0 : 2) + (k.startsWith("nfl") ? 0 : 1);
