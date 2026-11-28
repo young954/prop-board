@@ -244,6 +244,11 @@ footer a{color:var(--court)}
     <div class="locks" id="locks"></div>
   </section>
 
+  <section aria-labelledby="sh" style="display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:16px">
+    <h2 id="sh">Streaks <small><b id="sk-day"></b> · active streaks going into the next game: 20+ points, 10+ rebounds, 8+ assists, 3+ threes and double-doubles. Counts his team's games this season in a row; a missed game ends the streak. Only streaks of 3 or more, for players not listed Out.</small></h2>
+    <div class="stk-grid" id="streaks"><p class="muted">Loading…</p></div>
+  </section>
+
   <section class="lv-sec gp-sec" id="gp-nba" data-today="1" aria-labelledby="lv-nba-h"><h2 id="lv-nba-h">Games &amp; props <small>Tonight's games with score, moneyline, total and your posted props inside each one. Tap a game for each prop’s chance to cash and the box score. Use the arrows for other days. Rainbow = hot streak: 6 pts in a quarter, 2 threes in a row within 2:00, 3 assists in a quarter with no turnover, or 5 rebounds in a quarter</small></h2>
     <div class="slate-h"><div class="dnav"><button id="dp" aria-label="Previous day">‹</button><span class="dl" id="dl">—</span><button id="dn" aria-label="Next day">›</button></div><div class="sum" id="sum"></div></div>
     <div class="lv-sec gp-live" id="lv-nba"></div>
@@ -359,7 +364,7 @@ footer a{color:var(--court)}
   async function tick(name){
     const c = subs[name];
     try {
-      const r = await fetch(BASE + name + ".json?t=" + Date.now(), {cache: "no-store"});
+      const r = await fetch(BASE + name + ".json", {cache: "no-cache"});
       if (!r.ok) throw new Error("HTTP " + r.status);
       const txt = await r.text();
       if (txt === c.last) return;
@@ -1341,7 +1346,7 @@ const chips = document.createElement("nav");
 chips.className = "jchips"; chips.setAttribute("aria-label", "Jump to section");
 bar.appendChild(chips);
 
-const LABEL = {"lv-nba-h":"Games &amp; props","lv-nfl-h":"Games &amp; props","x-mkt-h":"Game odds","x-props-h":"Book props",lh:"Best props",dh:"DvP","x-inj-h":"Injuries",
+const LABEL = {"lv-nba-h":"Games &amp; props","lv-nfl-h":"Games &amp; props","x-mkt-h":"Game odds","x-props-h":"Book props",lh:"Best props",sh:"Streaks",dh:"DvP","x-inj-h":"Injuries",
   "xn-mkt-h":"Game odds","xn-props-h":"Book props","n-lh":"Best props","n-sh":"Streaks","n-dh":"DvP","xn-inj-h":"Injuries"};
 let collapsed = {};
 try { collapsed = JSON.parse(localStorage.getItem("pb-collapsed") || "{}") || {}; } catch {}
@@ -2318,7 +2323,7 @@ setInterval(() => { if (today() !== day) rebuild(); }, 60000);
   const hd = document.querySelector("#tab-nba header"); if (hd) hd.after(el);
   async function load(){
     try {
-      const r = await fetch("status.json?t=" + Date.now(), {cache: "no-store"}); if (!r.ok) return;
+      const r = await fetch("status.json", {cache: "no-cache"}); if (!r.ok) return;
       const s = await r.json(), mins = Math.round((Date.now() - Date.parse(s.updated_at)) / 60000);
       const age = mins < 1 ? "just now" : mins < 90 ? mins + " min ago" : Math.round(mins / 60) + " hr ago";
       el.innerHTML = `<span>Auto-updates every 30 min, 10 AM–2 AM ET</span><span>Last update <b>${age}</b> (${s.updated_et})</span>` +
@@ -2362,7 +2367,7 @@ const ET = {timeZone:"America/New_York", hour:"numeric", minute:"2-digit"};
 const fmt = d => d.toLocaleTimeString("en-US", ET) + " ET";
 const ago = ms => { const m = Math.max(0, Math.round(ms/60000)); return m < 1 ? "just now" : m < 60 ? m + " min ago" : m < 1440 ? Math.floor(m/60) + " h " + (m%60) + " min ago" : Math.floor(m/1440) + " d ago"; };
 const newest = o => { let t = 0; for (const [k, d] of Object.entries(o || {})) { if (k[0] === "_") continue; const a = Date.parse(d && d.asof); if (a > t) t = a; } return t || 0; };
-const j = async u => { const r = await fetch(u + "?t=" + Date.now(), {cache:"no-store"}); if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); };
+const j = async u => { const r = await fetch(u, {cache:"no-cache"}); if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); };
 let failed = false;
 async function health(){
   if (!navigator.onLine) { bar.dataset.s = "off"; bar.innerHTML = `<span><span class="pf-dot"></span>You're offline — showing the last data loaded.</span><button type="button" id="pf-r">Retry</button>`; wire(); return; }
@@ -2506,7 +2511,9 @@ function pOver(mu, sd, line, count){
 const FILES = ["props","games","h2h","dvp","injuries","slate","nfl_teams","nfl_dvp","nfl_slate","status"];
 const D = {}, ST = {nba:{day:"",side:"all",stat:"all",min:2,shown:12}, nfl:{day:"",side:"all",stat:"all",min:2,shown:12}};
 let NBA_LOG = {}, NFL_P = {}, RES = {nba:[], nfl:[]}, SKIP = {nba:0, nfl:0}, loadErr = null;
-const J = async n => { const r = await fetch(n + ".json?t=" + Date.now(), {cache:"no-store"}); if (!r.ok) throw new Error(n + " HTTP " + r.status); return r.json(); };
+const TXT = {};
+const J = async n => { const r = await fetch(n + ".json", {cache:"no-cache"}); if (!r.ok) throw new Error(n + " HTTP " + r.status);
+  const t = await r.text(); if (TXT[n] === t && n in D) return D[n]; TXT[n] = t; J.changed = true; return JSON.parse(t); };
 
 function prep(){
   NBA_LOG = {};
@@ -2779,12 +2786,19 @@ document.addEventListener("change", e => {
   const s = ST[m[2]]; if (m[1] === "d") s.day = e.target.value; else if (m[1] === "s") s.stat = e.target.value; else s.min = +e.target.value;
   s.shown = 12; view(m[2]);
 });
+let loading = false;
 async function load(){
+  if (loading) return; loading = true; J.changed = false;
+  try { await load1(); } finally { loading = false; }
+}
+async function load1(){
   const res = await Promise.allSettled(FILES.map(J));
+  if (!J.changed && !loadErr && RES.nba.length + RES.nfl.length) return;   // nothing new: skip the rebuild
   FILES.forEach((f, i) => { if (res[i].status === "fulfilled") D[f] = res[i].value; });
   const bad = FILES.filter((f, i) => res[i].status !== "fulfilled"); loadErr = bad.length ? bad.join(", ") : null;
   try { build(); } catch (e) { console.error(e); loadErr = "model error"; }
   renderAll();
+  if (TXT.games === load.recFor && REC) return; load.recFor = TXT.games;
   setTimeout(() => { try { REC = computeRec(); const el = $("pe-rec-nba"); if (el) el.innerHTML = recHtml(); } catch (e) { console.error(e); } }, 50);
 }
 mount("nba"); mount("nfl"); load(); setInterval(load, 180000);
@@ -3219,7 +3233,7 @@ let PLAYED = null;
 const prevDay = d => { const x = new Date(d + "T12:00:00Z"); x.setUTCDate(x.getUTCDate() - 1); return x.toISOString().slice(0, 10); };
 async function loadPlayed(){
   try {
-    const j = await fetch("slate.json?t=" + Date.now(), {cache: "no-store"}).then(r => r.json()), m = {};
+    const j = await fetch("slate.json", {cache: "no-cache"}).then(r => r.json()), m = {};
     for (const id of Object.keys(j)) { const q = /^(\d{4}-\d{2}-\d{2})-([A-Z]+)-([A-Z]+)$/.exec(id); if (q) (m[q[1]] ||= new Set()).add(q[2]).add(q[3]); }
     PLAYED = m; fillB2B();
   } catch {}
@@ -3278,10 +3292,68 @@ function draw(){
   document.getElementById("pl-d").onchange = e => { DAY = e.target.value; draw(); };
 }
 async function loadLab(){
-  try { const r = await fetch("parlays.json?t=" + Date.now(), {cache: "no-store"}); if (!r.ok) throw new Error("HTTP " + r.status); DATA = await r.json(); draw(); }
+  try { const r = await fetch("parlays.json", {cache: "no-cache"}); if (!r.ok) throw new Error("HTTP " + r.status); DATA = await r.json(); draw(); }
   catch (e) { body.innerHTML = `<p class="muted">Parlay Lab couldn't load (${esc(e.message)}). <button type="button" id="pl-retry">Try again</button></p>`; document.getElementById("pl-retry").onclick = loadLab; }
 }
 el.addEventListener("toggle", () => { if (el.open && !DATA) loadLab(); });
+})();
+</script>
+<script>
+/* ---------- NBA streaks (mirrors the NFL Streaks section). Reads games / slate / injuries from the shared loader: no extra downloads. ---------- */
+(async () => {
+"use strict";
+const el = document.getElementById("streaks"); if (!el || !window.claude) return;
+const db = await window.claude.use("db"); if (!db) return;
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const norm = n => String(n||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z ]/g,"").replace(/\b(jr|sr|ii|iii|iv)\b/g,"").replace(/\s+/g," ").trim();
+const etDate = t => new Date(t).toLocaleDateString("en-CA", {timeZone: "America/New_York"});
+const dbl = p => [p.pts, p.reb, p.ast, p.stl, p.blk].filter(v => v >= 10).length >= 2;
+const CATS = [
+  ["pts", "20+ points", p => p.pts, v => v >= 20, "pts"],
+  ["reb", "10+ rebounds", p => p.reb, v => v >= 10, "reb"],
+  ["ast", "8+ assists", p => p.ast, v => v >= 8, "ast"],
+  ["tp", "3+ threes", p => p.tp, v => v >= 3, "3PM"],
+  ["dd", "Double-doubles", p => `${p.pts}/${p.reb}/${p.ast}`, (v, p) => dbl(p), "pts/reb/ast"]];
+let G = null, SL = null, INJ = {}, last = "";
+function draw(){
+  if (!G || !SL) return;
+  const now = Date.now(), up = SL.filter(g => g.status === "scheduled" && g.start && Date.parse(g.start) > now - 3 * 3600e3).sort((a, b) => a.start.localeCompare(b.start));
+  if (!up.length){ el.innerHTML = `<p class="muted">No upcoming games on the schedule.</p>`; return; }
+  const day = etDate(up[0].start), games = up.filter(g => etDate(g.start) === day), next = {};
+  for (const g of games){ next[g.home] = {g, opp: g.away, home: true}; next[g.away] = {g, opp: g.home, home: false}; }
+  const lbl = document.getElementById("sk-day");
+  if (lbl) lbl.textContent = (day === etDate(now) ? "Tonight" : new Date(day + "T12:00:00").toLocaleDateString("en-US", {weekday: "long"})) + ", " + new Date(day + "T12:00:00").toLocaleDateString("en-US", {month: "short", day: "numeric"});
+  // each team's finished games, newest first, and each player's line in them
+  const fin = G.filter(g => g.players && g.date).sort((a, b) => b.date.localeCompare(a.date)), team = {};
+  for (const g of fin) for (const t of [g.home, g.away]) (team[t] ||= []).push(g);
+  const out = [];
+  for (const [t, nx] of Object.entries(next)){
+    const tg = team[t] || []; if (!tg.length) continue;
+    const rows = ((INJ[nx.g.id] || {}).rows) || [], stat = n => { const r = rows.find(r => r[0] === t && norm(r[1]) === norm(n)); return r ? r[4] || "" : ""; };
+    const names = new Set(); for (const g of tg.slice(0, 3)) for (const p of g.players) if (p.t === t && p.min > 0) names.add(p.n);
+    for (const n of names){
+      const st = stat(n); if (/^(out|doubtful|injured reserve)/i.test(st)) continue;
+      const k = norm(n), sk = {};
+      for (const [id, , f, ok] of CATS){ const s = {n: 0, vals: [], sum: 0};
+        for (const g of tg){ const p = g.players.find(q => q.t === t && norm(q.n) === k); if (!p || !(p.min > 0)) break;
+          const v = f(p); if (!ok(v, p)) break; s.n++; s.vals.push(v); if (typeof v === "number") s.sum += v; }
+        sk[id] = s; }
+      out.push({n, t, opp: nx.opp, home: nx.home, start: nx.g.start, st, sk});
+    }
+  }
+  const key = JSON.stringify(out.map(o => [o.n, o.st, Object.values(o.sk).map(s => s.n)]));
+  if (key === last) return; last = key;
+  el.innerHTML = CATS.map(([id, title, , , u]) => {
+    const xs = out.filter(o => o.sk[id].n >= 3).sort((a, b) => b.sk[id].n - a.sk[id].n || b.sk[id].sum / b.sk[id].n - a.sk[id].sum / a.sk[id].n).slice(0, 12);
+    const body = xs.length ? xs.map(o => { const s = o.sk[id], started = Date.parse(o.start) < now;
+      const when = new Date(o.start).toLocaleString("en-US", {timeZone: "America/New_York", hour: "numeric", minute: "2-digit"}) + " ET";
+      return `<div class="stk-p"><div class="stk-n">${esc(o.n)} <small>${esc(o.t)} ${o.home ? "vs" : "@"} ${esc(o.opp)}</small></div><div class="stk-s"><b>${s.n}</b> straight${o.st ? ` · <span class="stk-w">${esc(o.st)}</span>` : ""}</div><div class="stk-sub">${u} by game, newest first: ${s.vals.slice(0, 10).join(", ")}${s.vals.length > 10 ? ", …" : ""} · ${started ? "game started" : esc(when)}</div></div>`; }).join("")
+      : `<p class="muted">No active streaks of 3+ games.</p>`;
+    return `<div class="stk-c"><h3>${title} <small>games in a row</small></h3>${body}</div>`; }).join("");
+}
+db.collection("games").onSnapshot(s => { G = s.docs.map(d => d.data()); draw(); }, () => { if (!G) el.innerHTML = `<p class="muted">Couldn't load box scores. Pull down to refresh.</p>`; });
+db.collection("slate").onSnapshot(s => { SL = s.docs.map(d => ({id: d.id, ...d.data()})); draw(); }, () => {});
+db.collection("injuries").onSnapshot(s => { INJ = Object.fromEntries(s.docs.map(d => [d.id, d.data()])); last = ""; draw(); }, () => {});
 })();
 </script>
 </body></html>
